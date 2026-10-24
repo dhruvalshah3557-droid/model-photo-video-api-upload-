@@ -1,0 +1,34 @@
+name: Dump Pages
+
+on:
+  workflow_dispatch:
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: auto_upload
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Dump pages
+        env:
+          FB_ACCESS_TOKEN: ${{ secrets.FACEBOOKTOKEN || secrets.FACEBOOKDEBUGTOKEN }}
+        run: python dump_pages.py > pages.json || true
+
+      - name: Upload pages list
+        uses: actions/upload-artifact@v5
+        with:
+          name: pages
+          path: auto_upload/pages.json

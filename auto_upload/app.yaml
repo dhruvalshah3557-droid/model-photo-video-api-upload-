@@ -1,0 +1,16 @@
+runtime: python312
+entrypoint: python main.py --loop
+
+env_variables:
+  GOOGLE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1jjC4oaWsyqLzG6vT5EwJkVAgJCXGpz_7fWr6wb7OU3o/edit"
+  MODEL_MEDIA_SHEET_URL: "https://docs.google.com/spreadsheets/d/1kAD1ASXaaqrBmNHDVMYgj_cfW8pFJPEiRCY8ENutAvQ/edit"
+  MODEL_MEDIA_SOURCE_SHEET: "Model Media FTP"
+  SOURCE_IMPORT_SHEET: "Source Import"
+  ACCOUNTS_SHEET: "Accounts"
+  QUEUE_SHEET: "Publishing Queue"
+  LOG_SHEET: "Publishing Log"
+  USE_SECRET_MANAGER: "true"
+
+automatic_scaling:
+  min_instances: 1
+  max_instances: 1

@@ -1,0 +1,55 @@
+name: Issue Fixer
+
+# Autonomous LLM agent: watches issues labeled `auto-fix`, generates a code
+# fix with the configured LLM, validates it locally (git apply + py_compile),
+# and opens a pull request. All changes go through a feature branch + PR.
+#
+# Setup (one-time) in GitHub Settings > Secrets and variables > Actions:
+#   USER_LLM_API_KEY   required, your LLM API key (enables the agent)
+#   USER_LLM_BASE_URL  optional, default https://api.openai.com/v1
+#   USER_LLM_MODEL     optional, default gpt-4o-mini
+#   ISSUE_FIXER_MAX_ISSUES  optional, max issues fixed per run (default 1)
+#
+# Without USER_LLM_API_KEY the workflow runs but does nothing (stays green).
+
+on:
+  issues:
+    types: [opened, labeled]
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: issue-fixer
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Run issue fixer
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          USER_LLM_API_KEY: ${{ secrets.USER_LLM_API_KEY }}
+          USER_LLM_BASE_URL: ${{ secrets.USER_LLM_BASE_URL }}
+          USER_LLM_MODEL: ${{ secrets.USER_LLM_MODEL }}
+          ISSUE_FIXER_MAX_ISSUES: ${{ secrets.ISSUE_FIXER_MAX_ISSUES }}
+        run: python auto_upload/issue_fixer.py

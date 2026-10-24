@@ -1,0 +1,165 @@
+name: Auto Upload Production
+
+on:
+  schedule:
+    # Run on 10-minute boundaries so account-local :00 and :50 slots are covered.
+    - cron: "0,10,20,30,40,50 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - .github/production-trigger.txt
+
+concurrency:
+  group: auto-upload-production
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: auto_upload
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python with pip cache
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: auto_upload/requirements.txt
+
+      - name: Cache YouTube OAuth token
+        uses: actions/cache@v5
+        with:
+          path: auto_upload/credentials/youtube_token*.pickle
+          key: youtube-token-${{ runner.os }}-v2
+
+      - name: Install ffmpeg only if missing
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Write service account credentials
+        env:
+          GOOGLE_SHEET_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEET_CREDENTIALS_JSON }}
+        run: echo "$GOOGLE_SHEET_CREDENTIALS_JSON" > credentials/service_account.json
+
+      - name: Write YouTube client secret
+        env:
+          YOUTUBE_CLIENT_SECRET_JSON: ${{ secrets.YOUTUBEJSON || secrets.YOUTUBE_CLIENT_SECRET_JSON }}
+        run: echo "$YOUTUBE_CLIENT_SECRET_JSON" > credentials/youtube_client_secret.json
+
+      - name: Preflight Meta token and discover new pages
+        env:
+          GOOGLE_SHEET_CREDENTIALS: credentials/service_account.json
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+          SOURCE_IMPORT_SHEET: Source Import
+          MODEL_MEDIA_SHEET_URL: https://docs.google.com/spreadsheets/d/1kAD1ASXaaqrBmNHDVMYgj_cfW8pFJPEiRCY8ENutAvQ/edit
+          MODEL_MEDIA_SOURCE_SHEET: Model Media FTP
+          ACCOUNTS_SHEET: Accounts
+          QUEUE_SHEET: Publishing Queue
+          LOG_SHEET: Publishing Log
+          FB_ACCESS_TOKEN: ${{ secrets.FACEBOOKTOKEN }}
+        run: python meta_account_sync.py
+
+      - name: Reset Google Sheets quota window
+        run: sleep 65
+
+      - name: Run optimized auto upload
+        id: upload
+        env:
+          GOOGLE_SHEET_CREDENTIALS: credentials/service_account.json
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+          SOURCE_IMPORT_SHEET: Source Import
+          MODEL_MEDIA_SHEET_URL: https://docs.google.com/spreadsheets/d/1kAD1ASXaaqrBmNHDVMYgj_cfW8pFJPEiRCY8ENutAvQ/edit
+          MODEL_MEDIA_SOURCE_SHEET: Model Media FTP
+          ACCOUNTS_SHEET: Accounts
+          QUEUE_SHEET: Publishing Queue
+          LOG_SHEET: Publishing Log
+          MAX_JOBS_PER_RUN: "30"
+          MAX_GENERATE_JOBS: "80"
+          UPLOAD_INTERVAL_SECONDS: "45"
+          AUTO_ADD_AUDIO: "true"
+          # Audible model videos keep their original sound; music is added only when silent.
+          TRENDING_AUDIO_URL: ${{ secrets.TRENDING_AUDIO_URL }}
+          # Optional comma-separated licensed library. When unset, the pinned
+          # CC0 fallback library rotates automatically. The former single-track
+          # BACKGROUND_MUSIC_URL is intentionally retired.
+          BACKGROUND_MUSIC_URLS: ${{ secrets.BACKGROUND_MUSIC_URLS }}
+          IG_AUTO_TRENDING_AUDIO: "true"
+          # Prefer Meta's licensed catalog with market-specific searches.
+          # The uploader rotates results and falls back to approved CC0 music.
+          IG_USE_AUDIO_CATALOG: "true"
+          # Higher continuous batches: model media remains first while Meta/Sheets calls are spread out.
+          # Model video/photo jobs remain first. Reel/single-media jobs are chosen
+          # first and the worker stops making IG calls on the first quota error.
+          # Unused Facebook budget is not reserved once those pages have hit the
+          # 24h floor; leftover slots stay on model photo/video.
+          IG_MAX_JOBS_PER_RUN: "8"
+          # YouTube leftover slots stay on model videos from the same channel.
+          YT_MAX_JOBS_PER_RUN: "6"
+          IG_AUDIO_SEARCH_QUERY: ${{ vars.IG_AUDIO_SEARCH_QUERY }}
+          IG_AUDIO_SEARCH_QUERIES: ${{ vars.IG_AUDIO_SEARCH_QUERIES }}
+          IG_AUDIO_VOLUME: "80"
+          IG_VIDEO_VOLUME: "60"
+          IG_RATE_LIMIT_COOLDOWN_SECONDS: "3600"
+          IG_CAROUSEL_ITEM_DELAY_SECONDS: "8"
+          FB_ACCESS_TOKEN: ${{ secrets.FACEBOOKTOKEN }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_OAUTH_REFRESH_TOKEN: ${{ secrets.YOUTUBE_OAUTH_REFRESH_TOKEN }}
+          YOUTUBE_OAUTH_REFRESH_TOKEN_JIYA: ${{ secrets.YOUTUBE_OAUTH_REFRESH_TOKEN_JIYA }}
+          YOUTUBE_CLIENT_ID_COLOURDIAMONDSS: ${{ secrets.YOUTUBE_CLIENT_ID_COLOURDIAMONDSS }}
+          YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS: ${{ secrets.YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS }}
+          YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS: ${{ secrets.YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS }}
+          ZERNIO_API_KEY: ${{ secrets.ZERNIO_API_KEY }}
+          PINTEREST_ACCESS_TOKEN: ${{ secrets.PINTEREST_ACCESS_TOKEN }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          META_TOKEN_LINE_CD: ${{ secrets.META_TOKEN_LINE_CD || secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+        run: |
+          set -o pipefail
+          python optimized_runner.py
+
+          if grep -Eqi "Sheets connection failed|Google Sheets connection failed" /tmp/auto_upload.log; then
+            echo "ERROR: Auto upload could not connect to Google Sheets."
+            exit 1
+          fi
+
+          # Do not report a green workflow when publishing was actually attempted
+          # but every selected job failed. This makes upload outages visible.
+          if grep -Eq "Processing [1-9][0-9]* pending job\(s\)" /tmp/auto_upload.log; then
+            if ! grep -Eq "uploaded ->" /tmp/auto_upload.log; then
+              if grep -Eq "META_RATE_LIMIT|Instagram rate limited; keeping pending" /tmp/auto_upload.log; then
+                echo "WARNING: Instagram jobs were safely deferred by the Meta cooldown."
+              else
+                echo "ERROR: Upload jobs were processed, but none published successfully."
+                exit 1
+              fi
+            fi
+          fi
+
+      - name: Write production health summary
+        if: always()
+        env:
+          UPLOAD_STEP_CONCLUSION: ${{ steps.upload.outcome }}
+        run: python workflow_health.py
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: auto-upload-production-log
+          path: /tmp/auto_upload.log
+          if-no-files-found: ignore
+
+      - name: Rest between upload batches
+        if: always()
+        run: sleep 30

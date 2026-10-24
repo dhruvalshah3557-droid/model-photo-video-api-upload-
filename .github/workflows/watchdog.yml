@@ -1,0 +1,44 @@
+name: Watchdog
+
+# Self-healing agent: monitors Auto Upload runs and the publishing queue,
+# escalates persistent failures to `auto-fix` issues for the Issue Fixer agent,
+# and dispatches Auto Upload Production when a publish-ready Facebook,
+# Instagram or YouTube account is below eight successful posts in 24 hours
+# and the 30-minute spacing period has elapsed. Runs 24/7 on a 30-minute
+# schedule.
+
+on:
+  workflow_run:
+    workflows: ["Auto Upload Production"]
+    types: [completed]
+  schedule:
+    # Scheduled fallback in case a workflow_run event is delayed.
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+concurrency:
+  group: watchdog
+  cancel-in-progress: false
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Run watchdog
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python auto_upload/watchdog.py

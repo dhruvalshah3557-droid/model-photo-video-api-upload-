@@ -1,0 +1,64 @@
+name: Verify YouTube OAuth
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/verify-youtube.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify both YouTube channels
+        env:
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_OAUTH_REFRESH_TOKEN_JIYA: ${{ secrets.YOUTUBE_OAUTH_REFRESH_TOKEN_JIYA }}
+          YOUTUBE_CLIENT_ID_COLOURDIAMONDSS: ${{ secrets.YOUTUBE_CLIENT_ID_COLOURDIAMONDSS }}
+          YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS: ${{ secrets.YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS }}
+          YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS: ${{ secrets.YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS }}
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          verify_channel() {
+            local label="$1" client_id="$2" client_secret="$3" refresh_token="$4" expected_id="$5"
+            if [[ -z "$client_id" || -z "$client_secret" || -z "$refresh_token" ]]; then
+              echo "ERROR: $label OAuth secret is missing."
+              return 1
+            fi
+
+            local token_response access_token channel_response channel_id
+            token_response="$(curl --silent --show-error               --request POST https://oauth2.googleapis.com/token               --data-urlencode "client_id=$client_id"               --data-urlencode "client_secret=$client_secret"               --data-urlencode "refresh_token=$refresh_token"               --data-urlencode 'grant_type=refresh_token')" || {
+                echo "ERROR: $label could not reach Google's token endpoint."
+                return 1
+              }
+            access_token="$(jq -r '.access_token // empty' <<<"$token_response")"
+            if [[ -z "$access_token" ]]; then
+              echo "ERROR: $label refresh token was rejected by Google."
+              jq -r '(.error // "unknown") + ": " + (.error_description // "no description")' <<<"$token_response"
+              return 1
+            fi
+
+            channel_response="$(curl --fail-with-body --silent --show-error               --header "Authorization: Bearer $access_token"               'https://www.googleapis.com/youtube/v3/channels?part=id&mine=true')" || {
+                echo "ERROR: $label could not read its YouTube channel."
+                return 1
+              }
+            channel_id="$(jq -r '.items[0].id // empty' <<<"$channel_response")"
+            if [[ "$channel_id" != "$expected_id" ]]; then
+              echo "ERROR: $label token belongs to channel ${channel_id:-unknown}, expected $expected_id."
+              return 1
+            fi
+            echo "OK: $label authenticated as $channel_id."
+          }
+
+          failures=0
+          verify_channel             "Colour Diam"             "$YOUTUBE_CLIENT_ID_COLOURDIAMONDSS"             "$YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS"             "$YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS"             "UCTWbcY-YtvAx2QUZKXt230A" || failures=1
+
+          verify_channel             "JiyasDelight"             "$YOUTUBE_CLIENT_ID"             "$YOUTUBE_CLIENT_SECRET"             "$YOUTUBE_OAUTH_REFRESH_TOKEN_JIYA"             "UCDFzWfIRvLu1LXq3mQrkj6Q" || failures=1
+
+          exit "$failures"

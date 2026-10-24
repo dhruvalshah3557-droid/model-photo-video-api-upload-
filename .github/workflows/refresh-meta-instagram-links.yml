@@ -1,0 +1,24 @@
+name: Refresh Meta Instagram Links
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - .github/workflows/refresh-meta-instagram-links.yml
+  workflow_dispatch:
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests python-dotenv
+      - name: List linked Instagram business accounts
+        env:
+          FB_ACCESS_TOKEN: ${{ secrets.FACEBOOKTOKEN }}
+        run: python auto_upload/dump_pages.py
+
+# refresh: 2026-08-29T18:05Z

@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Auto Upload — Pipeline Preview</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #1a2130;
+    --border: #2a3448;
+    --text: #e6ebf5;
+    --muted: #8b96ad;
+    --fb: #1877f2;
+    --ig: #e4405f;
+    --yt: #ff0000;
+    --ok: #22c55e;
+    --err: #ef4444;
+    --warn: #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 32px 16px;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .flow {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 10px;
+    align-items: stretch;
+    margin-bottom: 28px;
+  }
+  .node {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 12px;
+    text-align: center;
+    position: relative;
+    min-height: 118px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    transition: border-color .2s;
+  }
+  .node.active { border-color: var(--fb); box-shadow: 0 0 0 1px var(--fb); }
+  .node.done { border-color: var(--ok); }
+  .node.fail { border-color: var(--err); }
+  .node .icon { font-size: 22px; }
+  .node .label { font-size: 13px; font-weight: 600; }
+  .node .desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
+  .arrow { display: none; }
+  .node::after {
+    content: "\2192";
+    position: absolute;
+    right: -14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--border);
+    font-size: 16px;
+  }
+  .node:last-child::after { display: none; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 800px) { .flow { grid-template-columns: repeat(2, 1fr); } .node::after { display: none; } .grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .panel h2 { font-size: 14px; margin-bottom: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+
+  .sheet-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr 90px;
+    gap: 8px;
+    font-size: 12px;
+    padding: 8px;
+    border-radius: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    margin-bottom: 8px;
+    align-items: center;
+  }
+  .sheet-row .h { color: var(--muted); font-weight: 600; }
+  .sheet-row .status { text-align: center; font-weight: 700; }
+
+  .log {
+    background: #0a0e16;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: "SF Mono", "Fira Code", Consolas, monospace;
+    font-size: 12px;
+    height: 280px;
+    overflow-y: auto;
+    line-height: 1.7;
+  }
+  .log .t { color: var(--muted); }
+  .log .info { color: var(--fb); }
+  .log .ok { color: var(--ok); }
+  .log .err { color: var(--err); }
+  .log .warn { color: var(--warn); }
+
+  .controls { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  button {
+    background: var(--fb);
+    border: none;
+    color: #fff;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 10px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  button:hover { filter: brightness(1.1); }
+  button.secondary { background: var(--panel); border: 1px solid var(--border); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+
+  .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+  .chip.fb { background: rgba(24,119,242,.2); color: var(--fb); }
+  .chip.ig { background: rgba(228,64,95,.2); color: var(--ig); }
+  .chip.yt { background: rgba(255,0,0,.2); color: var(--yt); }
+  .chip.pending { background: rgba(245,158,11,.15); color: var(--warn); }
+  .chip.ok { background: rgba(34,197,94,.15); color: var(--ok); }
+  .chip.failed { background: rgba(239,68,68,.15); color: var(--err); }
+
+  .steps { font-size: 12px; }
+  .steps .step { display: flex; gap: 10px; padding: 6px 0; align-items: flex-start; border-bottom: 1px dashed var(--border); }
+  .steps .step:last-child { border-bottom: none; }
+  .steps .n {
+    width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+    background: var(--border); color: var(--text);
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px;
+  }
+  .steps .step.active .n { background: var(--fb); }
+  .steps .step.done .n { background: var(--ok); }
+  .steps .step.fail .n { background: var(--err); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Auto Upload — Pipeline Preview</h1>
+  <p class="sub">Simulated run of <code>python main.py</code> against a Google Sheet of pending posts. Watch the flow step by step.</p>
+
+  <div class="flow" id="flow">
+    <div class="node" id="n-sheet"><div class="icon">📋</div><div class="label">Google Sheets</div><div class="desc">Read rows where Status is empty or "pending"</div></div>
+    <div class="node" id="n-scrape"><div class="icon">🕷️</div><div class="label">Product Scraper</div><div class="desc">Extract title / description / keywords from Product URL</div></div>
+    <div class="node" id="n-pages"><div class="icon">📄</div><div class="label">Discover Pages</div><div class="desc">GET /me/accounts with FB_ACCESS_TOKEN</div></div>
+    <div class="node" id="n-fb"><div class="icon">📘</div><div class="label">Facebook</div><div class="desc">POST /photos or /videos + product_tags</div></div>
+    <div class="node" id="n-ig"><div class="icon">📸</div><div class="label">Instagram</div><div class="desc">Container &#8594; wait 30s &#8594; media_publish (REELS)</div></div>
+    <div class="node" id="n-yt"><div class="icon">▶️</div><div class="label">YouTube</div><div class="desc">OAuth token &#8594; resumable videos.insert</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Google Sheet (AutoUpload)</h2>
+      <div class="sheet-row"><span class="h">Media URL</span><span class="h">Platform</span><span class="h">Caption</span><span class="h">Product URL</span><span class="h">Status</span></div>
+      <div class="sheet-row" id="r1">
+        <span>https://…/ring.mp4</span><span class="chip fb">facebook</span><span>Stunning ring ✨</span><span>https://…/ring</span><span class="chip pending" id="s1">pending</span>
+      </div>
+      <div class="sheet-row" id="r2">
+        <span>https://…/necklace.mp4</span><span class="chip ig">instagram</span><span>Necklace — video</span><span>https://…/necklace</span><span class="chip pending" id="s2">pending</span>
+      </div>
+      <div class="sheet-row" id="r3">
+        <span>https://…/earrings.mp4</span><span class="chip yt">youtube</span><span>Earrings collection</span><span>https://…/earrings</span><span class="chip pending" id="s3">pending</span>
+      </div>
+      <div class="controls">
+        <button id="runBtn">Run main.py</button>
+        <button id="resetBtn" class="secondary">Reset</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Execution Log</h2>
+      <div class="log" id="log"></div>
+      <div class="controls" style="margin-top:10px;">
+        <span class="chip fb">facebook</span>
+        <span class="chip ig">instagram</span>
+        <span class="chip yt">youtube</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>How it works — code walkthrough</h2>
+    <div class="steps" id="steps">
+      <div class="step" id="st1"><div class="n">1</div><div>SheetsReader authenticates (service account) and opens the sheet: <code>sheets_reader.py:15</code></div></div>
+      <div class="step" id="st2"><div class="n">2</div><div>Rows with empty / "pending" Status are collected: <code>sheets_reader.py:60</code> <code>get_pending_posts()</code></div></div>
+      <div class="step" id="st3"><div class="n">3</div><div>ProductScraper pulls og:title / og:description from Product URL: <code>product_scraper.py:10</code></div></div>
+      <div class="step" id="st4"><div class="n">4</div><div>Config.get_pages() auto-discovers FB pages + linked IG accounts: <code>config.py:20</code></div></div>
+      <div class="step" id="st5"><div class="n">5</div><div>Facebook: video ext check &#8594; POST {page_id}/videos (file_url): <code>facebook_uploader.py:36</code></div></div>
+      <div class="step" id="st6"><div class="n">6</div><div>Instagram: create container &#8594; sleep 30s &#8594; media_publish: <code>instagram_uploader.py:18</code></div></div>
+      <div class="step" id="st7"><div class="n">7</div><div>YouTube: OAuth + download + resumable insert: <code>youtube_uploader.py:79</code></div></div>
+      <div class="step" id="st8"><div class="n">8</div><div>Sheet Status updated to "uploaded" / "failed": <code>sheets_reader.py:95</code></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const logEl = document.getElementById("log");
+  const nodes = { sheet:"n-sheet", scrape:"n-scrape", pages:"n-pages", fb:"n-fb", ig:"n-ig", yt:"n-yt" };
+  const steps = ["st1","st2","st3","st4","st5","st6","st7","st8"];
+
+  function clearLog() { logEl.innerHTML = ""; }
+  function log(level, msg) {
+    const d = new Date();
+    const t = d.toTimeString().slice(0,8);
+    const line = document.createElement("div");
+    line.innerHTML = `<span class="t">${t}</span> [<span class="${level}">${level.toUpperCase()}</span>] ${msg}`;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function setActive(nodeId) {
+    Object.values(nodes).forEach(n => {
+      const el = document.getElementById(n);
+      if (el) { el.classList.remove("active","done","fail"); }
+    });
+    if (nodeId) document.getElementById(nodeId).classList.add("active");
+  }
+  function markDone(nodeId) { const el = document.getElementById(nodeId); el.classList.remove("active"); el.classList.add("done"); }
+  function markFail(nodeId) { const el = document.getElementById(nodeId); el.classList.remove("active"); el.classList.add("fail"); }
+  function setStep(n, cls) { const el = document.getElementById(steps[n-1]); el.classList.remove("active","done","fail"); el.classList.add(cls); }
+  function setStatus(rowId, chipId, text, cls) {
+    document.getElementById(rowId).style.border = cls==="ok" ? "1px solid var(--ok)" : cls==="failed" ? "1px solid var(--err)" : "";
+    const c = document.getElementById(chipId);
+    c.textContent = text;
+    c.className = "chip " + cls;
+  }
+  function resetAll() {
+    clearLog();
+    Object.values(nodes).forEach(n => { const el = document.getElementById(n); el.classList.remove("active","done","fail"); });
+    steps.forEach(s => { const el = document.getElementById(s); el.classList.remove("active","done","fail"); });
+    setStatus("r1","s1","pending","pending");
+    setStatus("r2","s2","pending","pending");
+    setStatus("r3","s3","pending","pending");
+    log("info", "=== Auto Upload: Single Run ===");
+  }
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  async function processRow(rowId, chipId, platform, media, title) {
+    log("info", `Row ${rowId}: ${platform} - ${media}`);
+    setStep(1,"active");
+    await sleep(500); markDone(nodes.sheet); setStep(1,"done");
+
+    setActive(nodes.scrape); setStep(3,"active");
+    await sleep(600);
+    log("info", `Scraped: "${title}" | keywords: fine, jewelry, diamond`);
+    markDone(nodes.scrape); setStep(3,"done");
+
+    setActive(nodes.pages); setStep(4,"active");
+    await sleep(500);
+    log("info", "Discovered 4 page(s) via /me/accounts");
+    markDone(nodes.pages); setStep(4,"done");
+
+    if (platform === "facebook") {
+      setActive(nodes.fb); setStep(5,"active");
+      await sleep(700);
+      log("ok", "[Colour Diam] Facebook video posted: 1029...7742");
+      markDone(nodes.fb); setStep(5,"done");
+      setStatus(rowId, chipId, "uploaded", "ok");
+      log("info", `Sheet row ${rowId}: Status -> uploaded`);
+    } else if (platform === "instagram") {
+      setActive(nodes.ig); setStep(6,"active");
+      await sleep(700);
+      log("ok", "[Colour Diam] IG REELS container created: 1789...3021");
+      log("warn", "[Colour Diam] Waiting 30s for video processing...");
+      await sleep(700);
+      log("ok", "[Colour Diam] IG post published: 1789...8890");
+      markDone(nodes.ig); setStep(6,"done");
+      setStatus(rowId, chipId, "uploaded", "ok");
+      log("info", `Sheet row ${rowId}: Status -> uploaded`);
+    } else if (platform === "youtube") {
+      setActive(nodes.yt); setStep(7,"active");
+      await sleep(700);
+      log("info", "Downloading video for YouTube: " + media);
+      await sleep(600);
+      log("ok", "YouTube uploaded: https://youtu.be/dQw4w9WgXcQ");
+      markDone(nodes.yt); setStep(7,"done");
+      setStatus(rowId, chipId, "uploaded", "ok");
+      log("info", `Sheet row ${rowId}: Status -> uploaded`);
+    }
+    await sleep(500);
+    setStep(8,"active");
+    await sleep(400);
+    setStep(8,"done");
+  }
+
+  document.getElementById("runBtn").addEventListener("click", async () => {
+    const btn = document.getElementById("runBtn");
+    btn.disabled = true;
+    resetAll();
+    await processRow("r1","s1","facebook","https://cdn.../ring.mp4","Ring Pendant");
+    await sleep(400);
+    await processRow("r2","s2","instagram","https://cdn.../necklace.mp4","Necklace Set");
+    await sleep(400);
+    await processRow("r3","s3","youtube","https://cdn.../earrings.mp4","Earrings Collection");
+    log("info", "All pending posts processed. Exiting.");
+    btn.disabled = false;
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", () => { resetAll(); });
+
+  resetAll();
+</script>
+</body>
+</html>

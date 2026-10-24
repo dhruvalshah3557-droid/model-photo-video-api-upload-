@@ -1,0 +1,50 @@
+name: Dependency configuration checks
+on:
+  pull_request:
+    paths:
+      - '.github/dependabot.yml'
+      - '.github/workflows/dependency-config-check.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Validate manifest paths and update policy
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          
+          config = json.loads(Path(".github/dependabot.yml").read_text())
+          assert config["version"] == 2
+          assert config["updates"], "At least one ecosystem is required"
+          seen = set()
+          for update in config["updates"]:
+              ecosystem, directory = update["package-ecosystem"], update["directory"]
+              assert ecosystem in {"npm", "pip", "pub", "github-actions"}
+              assert directory.startswith("/") and ".." not in Path(directory).parts
+              key = (ecosystem, directory)
+              assert key not in seen, f"Duplicate ecosystem/directory: {key}"
+              seen.add(key)
+              base = Path(".") / directory.lstrip("/")
+              if ecosystem == "npm":
+                  assert (base / "package.json").is_file(), directory
+              elif ecosystem == "pip":
+                  assert list(base.glob("requirements*.txt")) or (base / "pyproject.toml").is_file(), directory
+              elif ecosystem == "pub":
+                  assert (base / "pubspec.yaml").is_file(), directory
+              else:
+                  assert directory == "/" and list(Path(".github/workflows").glob("*.y*ml"))
+              assert update["schedule"]["interval"] == "weekly"
+              assert update["schedule"]["timezone"] == "Asia/Kolkata"
+              assert 1 <= update["open-pull-requests-limit"] <= 5
+              for group in update.get("groups", {}).values():
+                  assert set(group["update-types"]) == {"patch", "minor"}
+          print(f"Validated {len(seen)} dependency update targets")
+          
+          PY

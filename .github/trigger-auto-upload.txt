@@ -1,0 +1,3 @@
+manual trigger: test current quota-safe full pipeline
+triggered: 2026-08-27 20:57 Asia/Bangkok
+reason: Instagram carousel video-first order + product link update
