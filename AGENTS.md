@@ -4,7 +4,8 @@ Project facts and conventions for the `auto_upload` project. These are persisten
 
 ## Hard rule: always save to GitHub
 
-- ALWAYS commit and push changes to GitHub (`origin/master`) after making them. Do not leave work only in the local working tree or only in local commits. If the remote moved (concurrent agent), rebase onto `origin/master` and push.
+- ALWAYS commit and push changes to this repo after making them: `https://github.com/dhruvalshah3557-droid/model-photo-video-api-upload-` (`origin/main`). Do not leave work only in the local working tree or only in local commits. If the remote moved (concurrent agent), rebase onto `origin/main` and push.
+- Remote must stay `origin` → `https://github.com/dhruvalshah3557-droid/model-photo-video-api-upload-`. Do not push project updates to other remotes.
 - This is the user's explicit standing instruction.
 
 ## Project
