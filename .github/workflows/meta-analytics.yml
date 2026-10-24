@@ -31,7 +31,7 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Write Google credentials
         env:
-          GOOGLE_SHEET_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEET_CREDENTIALS_JSON }}
+          GOOGLE_SHEET_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEET_CREDENTIALS_JSON || secrets.APIKEYJSON }}
         run: echo "$GOOGLE_SHEET_CREDENTIALS_JSON" > credentials/service_account.json
       - name: Collect Facebook and Instagram analytics
         env:

@@ -28,7 +28,7 @@ jobs:
 
       - name: Write service account credentials
         env:
-          GOOGLE_SHEET_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEET_CREDENTIALS_JSON }}
+          GOOGLE_SHEET_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEET_CREDENTIALS_JSON || secrets.APIKEYJSON }}
         run: echo "$GOOGLE_SHEET_CREDENTIALS_JSON" > credentials/service_account.json
 
       - name: Rewrite Accounts tab from accounts_data.tsv
