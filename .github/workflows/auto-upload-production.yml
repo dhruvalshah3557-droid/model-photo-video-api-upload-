@@ -131,6 +131,11 @@ jobs:
           PINTEREST_ACCESS_TOKEN: ${{ secrets.PINTEREST_ACCESS_TOKEN }}
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           META_TOKEN_LINE_CD: ${{ secrets.META_TOKEN_LINE_CD || secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_MODEL_DIR: Product/Jewellery/Model images
+          FTP_PUBLIC_BASE: https://colourdiam.com/Product/Jewellery/Model%20images/
         run: |
           set -o pipefail
           python optimized_runner.py

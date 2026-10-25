@@ -137,7 +137,27 @@ class WatchdogDeliveryTests(unittest.TestCase):
         pending, selected = watchdog.parse_selected_jobs(log_text)
         self.assertEqual((pending, selected), (63126, 0))
         self.assertTrue(watchdog.is_actionable_stall(log_text))
-        self.assertIn("DNS", watchdog.extract_stall_signature(log_text))
+        signature = watchdog.extract_stall_signature(log_text)
+        self.assertIn("DNS", signature)
+        self.assertNotIn("images.colourdiam.com", signature)
+
+    def test_zero_upload_stall_signatures_are_stable_across_counts(self):
+        first = (
+            "Optimized queue: 63126 pending -> 0 healthy job(s) selected\n"
+            "Media host does not resolve in DNS; rejecting URL: https://images.colourdiam.com/a.mp4\n"
+        )
+        second = (
+            "Optimized queue: 64001 pending -> 0 healthy job(s) selected\n"
+            "Media host does not resolve in DNS; rejecting URL: https://images.colourdiam.com/b.mp4\n"
+        )
+        self.assertEqual(
+            watchdog.extract_stall_signature(first),
+            watchdog.extract_stall_signature(second),
+        )
+        self.assertEqual(
+            watchdog.extract_stall_signature(first),
+            "Media host does not resolve in DNS; rejecting URL: URL",
+        )
 
     def test_instagram_cooldown_zero_upload_is_not_actionable(self):
         log_text = (

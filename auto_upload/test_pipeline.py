@@ -979,6 +979,84 @@ def test_dead_cdn_hosts_are_rewritten_onto_live_origin():
     print("OK test_dead_cdn_hosts_are_rewritten_onto_live_origin")
 
 
+def test_model_photo_video_404s_fall_back_to_jewellery_model_images():
+    import optimized_runner
+
+    fallback = optimized_runner._jewellery_model_images_fallback(
+        "https://colourdiam.com/Product/Model%20Photo%20Video/416/center.jpeg"
+    )
+    assert fallback == (
+        "https://colourdiam.com/Product/Jewellery/Model%20images/416/center.jpeg"
+    )
+    urls = optimized_runner._rewrite_media_urls(
+        ["https://colourdiam.com/Product/Model%20Photo%20Video/416/center.jpeg"],
+        include_fallbacks=True,
+    )
+    assert urls[0] == "https://colourdiam.com/Product/Model%20Photo%20Video/416/center.jpeg"
+    assert (
+        "https://colourdiam.com/Product/Jewellery/Model%20images/416/center.jpeg"
+        in urls
+    )
+    resolved = optimized_runner.resolve_media_fixed(
+        {"platform": "facebook", "media_selection": "model_video:0", "sku": "298"},
+        {"sku": "298", "model_videos": [
+            "https://colourdiam.com/Product/Model%20Photo%20Video/298/video.mp4"
+        ]},
+    )
+    assert resolved[0] == "https://colourdiam.com/Product/Model%20Photo%20Video/298/video.mp4"
+    assert (
+        "https://colourdiam.com/Product/Jewellery/Model%20images/298/video.mp4"
+        in resolved
+    )
+    print("OK test_model_photo_video_404s_fall_back_to_jewellery_model_images")
+
+
+def test_ftp_listing_maps_files_to_public_https_urls():
+    from ftp_media import list_model_media, merge_ftp_model_media, public_url
+
+    assert public_url(
+        "https://colourdiam.com/Product/Jewellery/Model%20images/",
+        "416",
+        "center.jpeg",
+    ) == "https://colourdiam.com/Product/Jewellery/Model%20images/416/center.jpeg"
+
+    class FakeFTP:
+        def cwd(self, path):
+            return None
+
+        def nlst(self, path="."):
+            if path in (".", ""):
+                return ["416", "298"]
+            if path == "416":
+                return ["416/center.jpeg", "416/video.mp4"]
+            if path == "298":
+                return ["298/video.mp4"]
+            return []
+
+    listing = list_model_media(
+        skus=["416"],
+        client=FakeFTP(),
+        config={
+            "host": "ftp.example",
+            "user": "user",
+            "password": "pass",
+            "directory": "Product/Jewellery/Model images",
+            "public_base": "https://colourdiam.com/Product/Jewellery/Model%20images/",
+        },
+    )
+    assert listing["416"]["images"] == [
+        "https://colourdiam.com/Product/Jewellery/Model%20images/416/center.jpeg"
+    ]
+    assert listing["416"]["videos"] == [
+        "https://colourdiam.com/Product/Jewellery/Model%20images/416/video.mp4"
+    ]
+    sources = {"416": {"model_images": [], "model_videos": []}}
+    merge_ftp_model_media(sources, listing)
+    assert sources["416"]["model_images"] == listing["416"]["images"]
+    assert sources["416"]["model_videos"] == listing["416"]["videos"]
+    print("OK test_ftp_listing_maps_files_to_public_https_urls")
+
+
 def test_youtube_jobs_are_queued_when_only_product_images_mismatch():
     from job_generator import generate_jobs, _is_clean_source
 
@@ -1071,6 +1149,8 @@ if __name__ == "__main__":
     test_glued_model_photo_and_video_links_use_model_photo_video_origin()
     test_dead_model_photo_video_http_urls_fall_back_to_jewellery_folder()
     test_dead_cdn_hosts_are_rewritten_onto_live_origin()
+    test_model_photo_video_404s_fall_back_to_jewellery_model_images()
+    test_ftp_listing_maps_files_to_public_https_urls()
     test_youtube_jobs_are_queued_when_only_product_images_mismatch()
     test_dns_and_integrity_preflight_failures_are_retried()
     test_ffprobe_timeout_is_not_broken_media()

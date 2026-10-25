@@ -53,10 +53,18 @@ STALL_SIGNAL_PATTERNS = (
 )
 ACTIONABLE_STALL_PATTERNS = (
     re.compile(r"Media host does not resolve in DNS", re.IGNORECASE),
+    re.compile(r"all media URLs are unavailable", re.IGNORECASE),
+    re.compile(r"media failed production preflight", re.IGNORECASE),
 )
 _GH_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\s*")
 _PY_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:,\d+)?\s*")
 _LEVEL_RE = re.compile(r"^\[(?:WARNING|ERROR|INFO|DEBUG|CRITICAL)\]\s*", re.I)
+_STALL_SIGNATURE_REPLACEMENTS = (
+    (re.compile(r"https?://\S+", re.IGNORECASE), "URL"),
+    (re.compile(r"\b\d+/\d+\b"), "N/N"),
+    (re.compile(r"\b\d+\s+pending\b", re.IGNORECASE), "N pending"),
+    (re.compile(r"\b\d{2,}\b"), "N"),
+)
 
 # Credential / permission / configuration failures can never be fixed by the
 # Issue Fixer (no code change can refresh an invalidated access token). The
@@ -165,6 +173,14 @@ def normalize_signature(line):
     return text[:220]
 
 
+def normalize_issue_signature(text):
+    """Strip volatile counts/URLs so 0-job stalls reopen the same issue."""
+    cleaned = normalize_signature(text)
+    for pattern, replacement in _STALL_SIGNATURE_REPLACEMENTS:
+        cleaned = pattern.sub(replacement, cleaned)
+    return cleaned[:220]
+
+
 def extract_error_signature(log_text):
     if not log_text:
         return "unknown (run log unavailable)"
@@ -197,7 +213,7 @@ def extract_stall_signature(log_text):
     for pattern in ACTIONABLE_STALL_PATTERNS:
         for line in log_text.splitlines():
             if pattern.search(line):
-                return normalize_signature(line)
+                return normalize_issue_signature(line)
     pending, selected = parse_selected_jobs(log_text)
     if selected == 0:
         return "Optimized queue: pending -> 0 healthy job(s) selected"

@@ -693,6 +693,8 @@ class SheetsReader:
                 "integrity_error": "; ".join(integrity_errors),
             }
         self._merge_model_media_rows(sources)
+        from ftp_media import merge_ftp_model_media
+        merge_ftp_model_media(sources)
         return sources
 
     def _merge_model_media_rows(self, sources):
