@@ -1060,6 +1060,9 @@ def _accept_healthy_job(
             housekeeping += 1
         return None, housekeeping, ""
 
+    selection = str(job.get("media_selection", "") or "")
+    model_fail_kind = "model_video" if selection.startswith("model_video:") else ""
+
     clean_source, source_reason = _is_clean_source(source, job)
     if not clean_source:
         if housekeeping < HOUSEKEEPING_LIMIT:
@@ -1069,7 +1072,7 @@ def _accept_healthy_job(
                 "error_message": source_reason,
             })
             housekeeping += 1
-        return None, housekeeping, ""
+        return None, housekeeping, model_fail_kind
 
     media = resolve_media_fixed(job, source)
     if not media:
@@ -1079,9 +1082,8 @@ def _accept_healthy_job(
                 "notes": "Auto-cleaned: no media resolved",
             })
             housekeeping += 1
-        return None, housekeeping, ""
+        return None, housekeeping, model_fail_kind
 
-    selection = str(job.get("media_selection", "") or "")
     force_video = (
         str(job.get("format", "") or "").strip().lower() == "video"
         or selection == "product_video"
@@ -1198,6 +1200,7 @@ def _healthy_candidates(
         # backlog cannot hide current healthy model posts.
         account_jobs.sort(key=lambda j: (
             _model_media_priority(j),
+            1 if str(j.get("error_message", "") or "").strip() else 0,
             int(j.get("attempts", 0) or 0),
             # An Instagram product carousel needs one container request per
             # image plus a parent-container and publish request. Prefer a

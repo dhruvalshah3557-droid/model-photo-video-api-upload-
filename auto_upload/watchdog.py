@@ -49,17 +49,14 @@ ZERO_UPLOAD_RE = re.compile(
 STALL_SIGNAL_PATTERNS = (
     re.compile(r"No healthy upload candidates found", re.IGNORECASE),
     re.compile(r"Media host does not resolve in DNS", re.IGNORECASE),
-    re.compile(r"Source row integrity mismatch", re.IGNORECASE),
     re.compile(r"No healthy candidate for enabled account", re.IGNORECASE),
 )
 ACTIONABLE_STALL_PATTERNS = (
     re.compile(r"Media host does not resolve in DNS", re.IGNORECASE),
-    re.compile(r"Source row integrity mismatch", re.IGNORECASE),
-    re.compile(
-        r"No healthy candidate for enabled account \S+ \((youtube|tiktok|facebook)\)",
-        re.IGNORECASE,
-    ),
 )
+_GH_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\s*")
+_PY_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:,\d+)?\s*")
+_LEVEL_RE = re.compile(r"^\[(?:WARNING|ERROR|INFO|DEBUG|CRITICAL)\]\s*", re.I)
 
 # Credential / permission / configuration failures can never be fixed by the
 # Issue Fixer (no code change can refresh an invalidated access token). The
@@ -159,6 +156,15 @@ def get_run_log(token, run_id):
         return ""
 
 
+def normalize_signature(line):
+    """Strip GitHub/Python timestamps and log levels so issue titles stay stable."""
+    text = re.sub(r"\s+", " ", str(line or "").strip())
+    text = _GH_TS_RE.sub("", text)
+    text = _PY_TS_RE.sub("", text)
+    text = _LEVEL_RE.sub("", text)
+    return text[:220]
+
+
 def extract_error_signature(log_text):
     if not log_text:
         return "unknown (run log unavailable)"
@@ -167,11 +173,11 @@ def extract_error_signature(log_text):
     for line in reversed(tail):
         low = line.lower()
         if "error:" in low or "traceback" in low or "exception" in low:
-            return re.sub(r"\s+", " ", line.strip())[:220]
+            return normalize_signature(line)
     for line in reversed(tail):
         low = line.lower()
         if "error" in low or "failed" in low:
-            return re.sub(r"\s+", " ", line.strip())[:220]
+            return normalize_signature(line)
     return "unknown failure (no error text in log tail)"
 
 
@@ -188,23 +194,21 @@ def parse_selected_jobs(log_text):
 def extract_stall_signature(log_text):
     if not log_text:
         return "zero healthy jobs selected (run log unavailable)"
-    for pattern in ACTIONABLE_STALL_PATTERNS + STALL_SIGNAL_PATTERNS:
+    for pattern in ACTIONABLE_STALL_PATTERNS:
         for line in log_text.splitlines():
             if pattern.search(line):
-                return re.sub(r"\s+", " ", line.strip())[:220]
+                return normalize_signature(line)
     pending, selected = parse_selected_jobs(log_text)
     if selected == 0:
-        return "Optimized queue: %s pending -> 0 healthy job(s) selected" % (
-            pending if pending is not None else "?"
-        )
+        return "Optimized queue: pending -> 0 healthy job(s) selected"
     return "zero healthy jobs selected"
 
 
 def is_actionable_stall(log_text):
-    """True when a green 0-upload run failed for a code-fixable media/source reason.
+    """True when a green 0-upload run failed for a code-fixable media-host reason.
 
-    Instagram Meta cooldown with Facebook already at the 24h floor is expected
-    and must not open auto-fix issues.
+    Source-row integrity warnings, Instagram cooldown, and empty healthy
+    samples are operational/data issues and must not open auto-fix issues.
     """
     if not log_text:
         return False
@@ -441,9 +445,28 @@ def find_issue_by_title(token, title):
     return None
 
 
+def issue_title_signature(title):
+    text = str(title or "")
+    if text.startswith("[auto-fix] "):
+        text = text[len("[auto-fix] "):]
+    elif text.startswith("[manual-review] "):
+        text = text[len("[manual-review] "):]
+    return normalize_signature(text)
+
+
 def find_auto_fix_issue(token, signature):
-    title = "[auto-fix] %s" % signature[:80]
-    return find_issue_by_title(token, title)
+    wanted = normalize_signature(signature)[:80]
+    title = "[auto-fix] %s" % wanted
+    exact = find_issue_by_title(token, title)
+    if exact:
+        return exact
+    for issue in list_open_issues(token):
+        existing = str(issue.get("title") or "")
+        if not existing.startswith("[auto-fix] "):
+            continue
+        if issue_title_signature(existing)[:80] == wanted:
+            return issue
+    return None
 
 
 def find_manual_review_issue(token, key):
@@ -531,7 +554,7 @@ def escalate_failure(token, signature, failed_runs):
         })
         return "commented on existing issue #%s" % issue["number"]
     newest = failed_runs[0]
-    title = "[auto-fix] %s" % signature[:80]
+    title = "[auto-fix] %s" % normalize_signature(signature)[:80]
     body_lines = [
         "The Watchdog detected repeated Auto Upload failures.",
         "",

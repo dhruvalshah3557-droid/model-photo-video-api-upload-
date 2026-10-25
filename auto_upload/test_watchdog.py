@@ -147,6 +147,39 @@ class WatchdogDeliveryTests(unittest.TestCase):
         )
         self.assertFalse(watchdog.is_actionable_stall(log_text))
 
+    def test_source_integrity_warning_is_not_actionable(self):
+        log_text = (
+            "2026-10-25T10:04:40.7237447Z 2026-10-25 10:04:40,723 [WARNING] "
+            "SKU 6267: blocked for auto-publish (Source row integrity mismatch - "
+            "product link belongs to another SKU (https://colourdiam.com/productdetail/6270))\n"
+            "Optimized queue: 22054 pending -> 0 healthy job(s) selected\n"
+            "No healthy upload candidates found in per-account preflight\n"
+            "No healthy candidate for enabled account FB-CD (facebook) in bounded sample of 300/721 account jobs\n"
+        )
+        self.assertFalse(watchdog.is_actionable_stall(log_text))
+        signature = watchdog.extract_stall_signature(log_text)
+        self.assertNotIn("6267", signature)
+        self.assertNotIn("productdetail/6270", signature)
+        self.assertIn("0 healthy job(s) selected", signature)
+
+    def test_normalize_signature_strips_timestamps(self):
+        first = (
+            "2026-10-25T10:04:40.7237447Z 2026-10-25 10:04:40,723 [WARNING] "
+            "SKU 6267: blocked for auto-publish"
+        )
+        second = (
+            "2026-10-25T15:03:40.3855823Z 2026-10-25 15:03:40,385 [WARNING] "
+            "SKU 6267: blocked for auto-publish"
+        )
+        self.assertEqual(
+            watchdog.normalize_signature(first),
+            watchdog.normalize_signature(second),
+        )
+        self.assertEqual(
+            watchdog.normalize_signature(first),
+            "SKU 6267: blocked for auto-publish",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
