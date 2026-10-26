@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 import time
-from urllib.parse import urlparse
+from urllib.parse import quote, unquote, urlparse
 
 import main
 from config import Config
@@ -86,6 +86,8 @@ _LIVE_MEDIA_HOSTS = (
     "www.colourdiam.com",
     "colourdiam.com",
 )
+_MODEL_PHOTO_VIDEO_MARKER = "/product/model photo video/"
+_LIVE_MODEL_IMAGES_PREFIX = "https://colourdiam.com/Product/Jewellery/Model%20images/"
 _REWRITE_LOGGED = set()
 
 
@@ -143,6 +145,31 @@ def _rewrite_media_url(url):
     return rewritten
 
 
+def _model_media_live_fallback(url):
+    """Keep the sheet Model Photo Video URL first; add the live site copy.
+
+    colourdiam.com currently 404s the FTP/sheet folder
+    /Product/Model Photo Video/<sku>/<file> while the same files still
+    serve from /Product/Jewellery/Model images/<sku>/<file>.
+    """
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlparse(raw)
+    except Exception:
+        return ""
+    path = unquote(parsed.path or "")
+    lowered = path.lower()
+    idx = lowered.find(_MODEL_PHOTO_VIDEO_MARKER)
+    if idx < 0:
+        return ""
+    rest = path[idx + len(_MODEL_PHOTO_VIDEO_MARKER):].lstrip("/")
+    if not rest:
+        return ""
+    return _LIVE_MODEL_IMAGES_PREFIX + quote(rest, safe="/._-")
+
+
 def _still_center_fallback(url):
     """Prefer the product center image when Source Import only has still.jpg."""
     raw = str(url or "").strip()
@@ -166,6 +193,9 @@ def _rewrite_media_urls(urls, include_fallbacks=False):
     for url in urls or []:
         value = _rewrite_media_url(url)
         candidates = [value]
+        live_model = _model_media_live_fallback(value)
+        if live_model:
+            candidates.append(live_model)
         if include_fallbacks:
             center = _still_center_fallback(value)
             if center:
@@ -263,6 +293,13 @@ _PRE_PUBLISH_HOLD_RETRY_MARKERS = (
 )
 _SKIPPED_MODEL_RETRY_MARKERS = (
     "duplicate product already uploaded to this account in another media format",
+)
+_MODEL_MEDIA_PREFLIGHT_RETRY_MARKERS = (
+    "media preflight failed",
+    "all media urls are unavailable",
+    "auto-cleaned: media failed production preflight",
+    "dns-invalid",
+    "not media",
 )
 
 
@@ -890,6 +927,44 @@ def _revive_unfetchable_media_jobs(sheets, accounts):
         revived += 1
     if revived:
         main.logger.info("Revived %s unfetchable-media job(s)", revived)
+    return revived
+
+
+def _revive_model_media_preflight_jobs(sheets, accounts):
+    """Requeue model jobs parked when the sheet Model Photo Video URL 404ed."""
+    enabled = {
+        aid for aid, a in accounts.items()
+        if a.get("enabled")
+    }
+    if not enabled:
+        return 0
+    records = sheets.queue_ws.get_all_records(head=sheets.queue_header_row)
+    revived = 0
+    for idx, rec in enumerate(records, start=sheets.queue_header_row + 1):
+        if revived >= REVIVE_LIMIT:
+            break
+        if not is_model_media(rec):
+            continue
+        status = str(rec.get("status", "")).strip().lower()
+        if status not in (Config.JOB_STATUS_NEEDS_REVIEW, Config.JOB_STATUS_FAILED):
+            continue
+        account_id = str(rec.get("account_id", "") or "").strip()
+        if account_id not in enabled:
+            continue
+        blob = " ".join((
+            str(rec.get("error_message", "") or ""),
+            str(rec.get("notes", "") or ""),
+        )).lower()
+        if not any(marker in blob for marker in _MODEL_MEDIA_PREFLIGHT_RETRY_MARKERS):
+            continue
+        sheets.update_job({"row": idx}, {
+            "status": "pending",
+            "error_message": "",
+            "notes": "Auto-revived after live Jewellery/Model images fallback for 404 Model Photo Video URLs",
+        })
+        revived += 1
+    if revived:
+        main.logger.info("Revived %s model-media preflight job(s)", revived)
     return revived
 
 
@@ -1556,6 +1631,7 @@ def process_optimized():
     _revive_caption_blockers(sheets, accounts)
     _revive_unfetchable_media_jobs(sheets, accounts)
     _revive_pre_publish_holds(sheets, accounts)
+    _revive_model_media_preflight_jobs(sheets, accounts)
     _revive_skipped_model_jobs(sheets, accounts)
     jobs = sheets.get_pending_jobs()
     if not jobs:

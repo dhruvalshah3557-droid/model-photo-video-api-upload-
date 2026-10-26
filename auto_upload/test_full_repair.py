@@ -1134,6 +1134,39 @@ class FullRepairTests(unittest.TestCase):
         self.assertEqual(updates[0][1]["status"], "pending")
         self.assertIn("model media", updates[0][1]["notes"].lower())
 
+    def test_model_photo_video_urls_keep_canonical_and_add_live_folder(self):
+        urls = optimized_runner._rewrite_media_urls(
+            ["https://colourdiam.com/Product/Model%20Photo%20Video/298/video.mp4"],
+        )
+        self.assertEqual(
+            urls[0],
+            "https://colourdiam.com/Product/Model%20Photo%20Video/298/video.mp4",
+        )
+        self.assertIn(
+            "https://colourdiam.com/Product/Jewellery/Model%20images/298/video.mp4",
+            urls,
+        )
+
+    def test_model_media_preflight_jobs_are_revived_for_live_fallback(self):
+        updates = []
+        records = [{
+            "status": "needs_review",
+            "account_id": "FB-JPN",
+            "media_selection": "model_video:0",
+            "error_message": "Media preflight failed: all media URLs are unavailable, dead, DNS-invalid, or not media",
+            "notes": "Auto-cleaned: media failed production preflight",
+        }]
+        sheets = types.SimpleNamespace(
+            queue_header_row=1,
+            queue_ws=types.SimpleNamespace(get_all_records=lambda head=1: records),
+            update_job=lambda job, payload: updates.append((job, payload)),
+        )
+        accounts = {"FB-JPN": {"enabled": True, "platform": "facebook"}}
+        revived = optimized_runner._revive_model_media_preflight_jobs(sheets, accounts)
+        self.assertEqual(revived, 1)
+        self.assertEqual(updates[0][1]["status"], "pending")
+        self.assertIn("model images", updates[0][1]["notes"].lower())
+
     def test_still_jpg_preflight_also_tries_center_image(self):
         urls = optimized_runner._rewrite_media_urls(
             ["https://www.colourdiam.com/Product/Diamond/9542/still.jpg"],
