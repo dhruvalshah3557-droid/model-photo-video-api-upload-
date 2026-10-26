@@ -84,13 +84,15 @@ class FacebookUploader:
             platform="facebook",
         )
         layout = video_layout_from_bytes(content)
-        if layout != "vertical":
+        if layout in ("landscape", "square"):
             logger.info(
                 f"[{self.page_name}] Publishing original {layout} video as a Page video"
             )
             return self._upload_page_video(name, content, content_type, caption, product_id)
 
-        logger.info(f"[{self.page_name}] Publishing original vertical video as a Reel")
+        logger.info(
+            f"[{self.page_name}] Publishing {layout or 'vertical'} video as a 1080x1920 Reel"
+        )
         reels_url = f"{FB_GRAPH_URL}/{self.page_id}/video_reels"
         start = requests.post(
             reels_url,

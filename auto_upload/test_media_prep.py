@@ -112,6 +112,7 @@ class MusicRotationTests(unittest.TestCase):
         with mock.patch("media_prep.shutil.which", return_value="/usr/bin/ffmpeg"), \
              mock.patch("media_prep.audio_state", return_value="missing"), \
              mock.patch("media_prep._probe_dimensions", return_value=(1080, 1920)), \
+             mock.patch("media_prep._probe_stream", return_value={}), \
              mock.patch("media_prep.subprocess.run", return_value=completed) as run:
             self.assertTrue(media_prep._to_9x16_fill("input.mp4", "output.mp4"))
         commands = [" ".join(call.args[0]) for call in run.call_args_list]
@@ -129,15 +130,17 @@ class MusicRotationTests(unittest.TestCase):
         self.assertNotIn("pad=", command)
         self.assertNotIn("-c:a copy", command)
 
-    def test_instagram_reel_fit_uses_safe_foreground_margin(self):
+    def test_instagram_reel_fit_uses_full_1080x1920_canvas(self):
         completed = mock.Mock(returncode=0)
         with mock.patch("media_prep.shutil.which", return_value="/usr/bin/ffmpeg"), \
              mock.patch("media_prep.audio_state", return_value="audible"), \
              mock.patch("media_prep._probe_dimensions", return_value=(1080, 1920)), \
+             mock.patch("media_prep._probe_stream", return_value={}), \
              mock.patch("media_prep.subprocess.run", return_value=completed) as run:
             self.assertTrue(media_prep._to_9x16_fill("input.mp4", "output.mp4", platform="instagram"))
         command = " ".join(run.call_args.args[0])
-        self.assertIn("scale=928:1498:force_original_aspect_ratio=decrease", command)
+        self.assertIn("scale=1080:1920:force_original_aspect_ratio=decrease", command)
+        self.assertNotIn("scale=928:1498", command)
         self.assertIn("crop=1080:1920", command)
         self.assertIn("-c:a aac", command)
 
@@ -146,6 +149,7 @@ class MusicRotationTests(unittest.TestCase):
         with mock.patch("media_prep.shutil.which", return_value="/usr/bin/ffmpeg"), \
              mock.patch("media_prep.audio_state", return_value="audible"), \
              mock.patch("media_prep._probe_dimensions", return_value=(1080, 1920)), \
+             mock.patch("media_prep._probe_stream", return_value={}), \
              mock.patch("media_prep.subprocess.run", return_value=completed) as run:
             self.assertTrue(media_prep._to_9x16_fill("input.mp4", "output.mp4"))
         command = " ".join(run.call_args.args[0])
@@ -155,6 +159,7 @@ class MusicRotationTests(unittest.TestCase):
     def test_reel_fit_rejects_dropped_original_audio(self):
         with mock.patch("media_prep.shutil.which", return_value="/usr/bin/tool"), \
              mock.patch("media_prep._probe_dimensions", return_value=(1080, 1920)), \
+             mock.patch("media_prep._probe_stream", return_value={}), \
              mock.patch("media_prep.audio_state", side_effect=["audible", "missing"]), \
              mock.patch(
                  "media_prep.subprocess.run",
@@ -217,22 +222,18 @@ class MusicRotationTests(unittest.TestCase):
         self.assertEqual(convert.call_args.kwargs.get("platform"), "facebook")
         self.assertEqual(content, b"facebook-fitted")
 
-    def test_prepare_video_fits_instagram_reels_with_safe_margin(self):
+    def test_prepare_video_keeps_instagram_source_already_1080x1920(self):
         response = mock.Mock(
             content=b"already-1080x1920",
             headers={"Content-Type": "video/mp4"},
         )
         response.raise_for_status.return_value = None
 
-        def fake_fill(src, dest, platform=""):
-            Path(dest).write_bytes(b"instagram-fitted")
-            return True
-
         with mock.patch("media_prep.requests.get", return_value=response), \
              mock.patch("media_prep.audio_state", return_value="audible"), \
              mock.patch("media_prep._probe_dimensions", return_value=(1080, 1920)), \
              mock.patch("media_prep.video_layout", return_value="vertical"), \
-             mock.patch("media_prep._to_9x16_fill", side_effect=fake_fill) as convert, \
+             mock.patch("media_prep._to_9x16_fill") as convert, \
              mock.patch("media_prep._ensure_playable_audio", return_value=False), \
              mock.patch.dict(media_prep.os.environ, {"AUTO_ADD_AUDIO": "true"}, clear=True):
             _, content, _ = media_prep.prepare_video(
@@ -240,9 +241,34 @@ class MusicRotationTests(unittest.TestCase):
                 fill_9x16=True,
                 platform="instagram",
             )
+        convert.assert_not_called()
+        self.assertEqual(content, b"already-1080x1920")
+
+    def test_prepare_video_fits_unknown_layout_to_reel_canvas(self):
+        response = mock.Mock(
+            content=b"unreadable-layout-bytes",
+            headers={"Content-Type": "video/mp4"},
+        )
+        response.raise_for_status.return_value = None
+
+        def fake_fill(src, dest, platform=""):
+            Path(dest).write_bytes(b"unknown-fitted")
+            return True
+
+        with mock.patch("media_prep.requests.get", return_value=response), \
+             mock.patch("media_prep.audio_state", return_value="audible"), \
+             mock.patch("media_prep._probe_dimensions", return_value=None), \
+             mock.patch("media_prep.video_layout", return_value="unknown"), \
+             mock.patch("media_prep._to_9x16_fill", side_effect=fake_fill) as convert, \
+             mock.patch("media_prep._ensure_playable_audio", return_value=False), \
+             mock.patch.dict(media_prep.os.environ, {"AUTO_ADD_AUDIO": "true"}, clear=True):
+            _, content, _ = media_prep.prepare_video(
+                "https://media.example/model.mp4",
+                fill_9x16=True,
+                platform="facebook",
+            )
         convert.assert_called_once()
-        self.assertEqual(convert.call_args.kwargs.get("platform"), "instagram")
-        self.assertEqual(content, b"instagram-fitted")
+        self.assertEqual(content, b"unknown-fitted")
 
     def test_prepare_video_remuxes_original_sound_to_aac(self):
         response = mock.Mock(
@@ -276,7 +302,35 @@ class MusicRotationTests(unittest.TestCase):
             "tags": {},
             "side_data_list": [{"rotation": -90}],
         }
-        self.assertEqual(media_prep._stream_rotation(stream), 90)
+        self.assertEqual(media_prep._stream_rotation(stream), 270)
+
+    def test_display_rotation_swaps_coded_landscape_to_vertical(self):
+        stream = {
+            "width": 1920,
+            "height": 1080,
+            "tags": {},
+            "side_data_list": [{"rotation": -90}],
+        }
+        with mock.patch("media_prep._probe_stream", return_value=stream):
+            self.assertEqual(media_prep._probe_dimensions("rotated.mp4"), (1080, 1920))
+            self.assertEqual(media_prep.video_layout("rotated.mp4"), "vertical")
+
+    def test_reel_fit_bakes_90_degree_rotation_into_pixels(self):
+        completed = mock.Mock(returncode=0)
+        stream = {
+            "width": 1920,
+            "height": 1080,
+            "tags": {"rotate": "90"},
+        }
+        with mock.patch("media_prep.shutil.which", return_value="/usr/bin/ffmpeg"), \
+             mock.patch("media_prep.audio_state", return_value="audible"), \
+             mock.patch("media_prep._probe_dimensions", return_value=(1080, 1920)), \
+             mock.patch("media_prep._probe_stream", return_value=stream), \
+             mock.patch("media_prep.subprocess.run", return_value=completed) as run:
+            self.assertTrue(media_prep._to_9x16_fill("input.mp4", "output.mp4"))
+        command = " ".join(run.call_args.args[0])
+        self.assertIn("-noautorotate", command)
+        self.assertIn("transpose=1,split=2", command)
 
 
 if __name__ == "__main__":

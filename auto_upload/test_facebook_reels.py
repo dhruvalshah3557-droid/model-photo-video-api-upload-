@@ -67,6 +67,32 @@ class FacebookReelsTests(unittest.TestCase):
         self.assertEqual(finish.kwargs["data"]["video_id"], "reel-456")
         self.assertNotIn("product_tags", finish.kwargs["data"])
 
+    def test_unknown_layout_publishes_as_reel(self):
+        uploader = FacebookUploader.__new__(FacebookUploader)
+        uploader.page_id = "page-123"
+        uploader.access_token = "page-token"
+        uploader.page_name = "Colour Diam Test"
+
+        responses = [
+            _Response({"video_id": "reel-456", "upload_url": "https://rupload.test/reel"}),
+            _Response({"success": True}),
+            _Response({"success": True}),
+        ]
+        with mock.patch(
+            "facebook_uploader.prepare_video",
+            return_value=("source.mp4", b"video-with-audio", "video/mp4"),
+        ), mock.patch(
+            "facebook_uploader.video_layout_from_bytes", return_value="unknown",
+        ), mock.patch(
+            "facebook_uploader.requests.post", side_effect=responses
+        ) as post:
+            result = uploader.upload_video(
+                "https://media.test/source.mp4", "Caption", "product-1"
+            )
+
+        self.assertEqual(result["id"], "reel-456")
+        self.assertTrue(post.call_args_list[0].args[0].endswith("/page-123/video_reels"))
+
     def test_landscape_video_keeps_original_size_on_page_videos(self):
         uploader = FacebookUploader.__new__(FacebookUploader)
         uploader.page_id = "page-123"

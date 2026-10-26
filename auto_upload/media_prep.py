@@ -347,31 +347,31 @@ def _mix_music(video_path, music_path, out_path, media_key, volume=0.72):
     return out_path
 
 
+def _parse_rotation_degrees(raw):
+    try:
+        return int(round(float(raw))) % 360
+    except (TypeError, ValueError):
+        return None
+
+
 def _stream_rotation(stream):
     """Return display rotation in degrees from tags or side data."""
     tags = stream.get("tags") or {}
-    raw = tags.get("rotate")
-    if raw not in (None, ""):
-        try:
-            return abs(int(float(raw))) % 180
-        except (TypeError, ValueError):
-            pass
+    parsed = _parse_rotation_degrees(tags.get("rotate"))
+    if parsed is not None:
+        return parsed
     for item in stream.get("side_data_list") or []:
-        raw = item.get("rotation")
-        if raw in (None, ""):
-            continue
-        try:
-            return abs(int(float(raw))) % 180
-        except (TypeError, ValueError):
-            continue
+        parsed = _parse_rotation_degrees(item.get("rotation"))
+        if parsed is not None:
+            return parsed
     return 0
 
 
-def _probe_dimensions(video_path):
-    """Return the first video stream's display dimensions, accounting for rotation."""
+def _probe_stream(video_path):
+    """Return the first video stream dict from ffprobe, or {}."""
     ffprobe = shutil.which("ffprobe")
     if not ffprobe:
-        return None
+        return {}
     try:
         probe = subprocess.run(
             [
@@ -383,13 +383,23 @@ def _probe_dimensions(video_path):
             check=False, capture_output=True, text=True, timeout=60,
         )
         data = json.loads(probe.stdout or "{}")
-        stream = (data.get("streams") or [{}])[0]
-        width, height = int(stream.get("width", 0)), int(stream.get("height", 0))
-        rotation = _stream_rotation(stream)
-        return (height, width) if rotation == 90 else (width, height)
+        return (data.get("streams") or [{}])[0] or {}
     except Exception as exc:
-        logger.warning("Video dimension probe failed: %s", exc)
+        logger.warning("Video stream probe failed: %s", exc)
+        return {}
+
+
+def _probe_dimensions(video_path):
+    """Return the first video stream's display dimensions, accounting for rotation."""
+    stream = _probe_stream(video_path)
+    try:
+        width, height = int(stream.get("width", 0) or 0), int(stream.get("height", 0) or 0)
+    except (TypeError, ValueError):
         return None
+    if width <= 0 or height <= 0:
+        return None
+    rotation = _stream_rotation(stream)
+    return (height, width) if rotation % 180 == 90 else (width, height)
 
 
 def video_layout(video_path):
@@ -429,33 +439,47 @@ def _audio_encode_args():
 
 
 def _foreground_canvas(platform):
-    """Instagram Reels UI covers more of the frame than Facebook Reels."""
-    if str(platform or "").strip().lower() == "instagram":
-        return 928, 1498
+    """Every Reel uses the full 1080x1920 canvas so FB and IG posts match in size."""
     return REELS_WIDTH, REELS_HEIGHT
 
 
 def _to_9x16_fill(video_path, out_path, platform=""):
     """Fit the complete source into a verified 1080x1920 Reel without cropping.
 
-    Facebook uses the full 1080x1920 foreground. Instagram leaves extra margin
-    so username/caption chrome does not cover the model or jewellery. Original
-    sound is re-encoded to AAC so Meta actually plays it; it is never replaced.
+    Facebook and Instagram both use the full 1080x1920 foreground with a
+    blurred edge-fill. Original sound is re-encoded to AAC so Meta actually
+    plays it; it is never replaced.
     """
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("ffmpeg is required for Reel normalization")
     input_audio = audio_state(video_path)
     fg_w, fg_h = _foreground_canvas(platform)
+    stream = _probe_stream(video_path)
+    rotation = _stream_rotation(stream) if stream else 0
+    rotate = ""
+    disable_autorotate = False
+    if stream:
+        if rotation in (90, 270):
+            rotate = "transpose=1," if rotation == 90 else "transpose=2,"
+            disable_autorotate = True
+        elif rotation == 180:
+            rotate = "transpose=1,transpose=1,"
+            disable_autorotate = True
+        elif rotation == 0:
+            disable_autorotate = True
     filter_complex = (
-        "[0:v]split=2[bgsrc][fgsrc];"
-        f"[bgsrc]scale={REELS_WIDTH}:{REELS_HEIGHT}:force_original_aspect_ratio=increase,"
+        f"[0:v]{rotate}split=2[bgsrc][fgsrc];"
+        f"[bgsrc]scale={REELS_WIDTH}:{REELS_HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,"
         f"crop={REELS_WIDTH}:{REELS_HEIGHT},boxblur=24:8[bg];"
-        f"[fgsrc]scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
+        f"[fgsrc]scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease:flags=lanczos[fg];"
         "[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,setdar=9/16[v]"
     )
-    cmd = [
-        ffmpeg, "-y", "-i", video_path,
+    cmd = [ffmpeg, "-y"]
+    if disable_autorotate:
+        cmd.append("-noautorotate")
+    cmd += [
+        "-i", video_path,
         "-filter_complex", filter_complex,
         "-map", "[v]", "-map", "0:a:0?",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
@@ -530,9 +554,11 @@ def prepare_video(media_url, fill_9x16=False, selection_key="", platform=""):
 
     Production rule: silent/muted videos MUST receive audio automatically.
     Audible videos keep their original soundtrack. Vertical Reels that are not
-    already 1080x1920 are padded with a blurred edge-fill; Facebook uses the
-    full canvas and Instagram leaves extra UI margin. Landscape/square sources
-    stay original size and are published as feed/Page video.
+    already 1080x1920 are padded with a blurred edge-fill onto the full
+    1080x1920 canvas for both Facebook and Instagram. Unknown layouts are
+    treated as vertical so a failed probe cannot publish a tiny original.
+    Landscape/square sources stay original size and are published as feed/Page
+    video.
     """
     auto_audio = _env_true("AUTO_ADD_AUDIO", "true")
     suffix = Path(media_url.split("?")[0]).suffix or ".mp4"
@@ -577,14 +603,19 @@ def prepare_video(media_url, fill_9x16=False, selection_key="", platform=""):
         current_dims = _probe_dimensions(current) or dims
         current_layout = video_layout(current) if current != tmp_path else layout
         dest = str(platform or "").strip().lower()
-        if fill_9x16 and current_layout == "vertical":
+        if fill_9x16 and current_layout in ("vertical", "unknown", ""):
             already_reel = current_dims == (REELS_WIDTH, REELS_HEIGHT)
-            if already_reel and dest != "instagram":
+            if already_reel:
                 logger.info(
                     "Vertical source already %dx%d; keeping pixels and original soundtrack",
                     REELS_WIDTH, REELS_HEIGHT,
                 )
             else:
+                if current_layout == "unknown":
+                    logger.warning(
+                        "Layout probe failed (%s); fitting to 1080x1920 Reel canvas",
+                        f"{current_dims[0]}x{current_dims[1]}" if current_dims else "unknown",
+                    )
                 fitted = current + ".9x16.mp4"
                 temp_paths.append(fitted)
                 _to_9x16_fill(current, fitted, platform=dest)

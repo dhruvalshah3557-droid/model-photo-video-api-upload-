@@ -719,8 +719,7 @@ class InstagramUploader:
         is_video = _is_video_url(media_url) if force_video is None else bool(force_video)
         if is_video:
             logger.info(
-                f"[{self.page_name}] Uploading original video bytes; "
-                "preserve sound and size, Reels only when vertical"
+                f"[{self.page_name}] Uploading original video bytes as a 1080x1920 Reel"
             )
             container_id = self._create_resumable_reel(
                 media_url, caption, product_id, cover_url
