@@ -19,6 +19,7 @@ EXPECTED_CHANNEL_IDS = {
     "COLOURDIAMONDSS": "UCTWbcY-YtvAx2QUZKXt230A",
     "TRENDINGJEWELS": "UCWSGpmJfBIzcA9O9kFWaRNw",
     "JIYA": "UCDFzWfIRvLu1LXq3mQrkj6Q",
+    "TREND": "UCiOkTy5C8_dZw-TlzYKeOVA",
 }
 COLOURDIAMONDSS_SUFFIXES = {"COLOURDIAMONDSS", "TRENDINGJEWELS"}
 
@@ -71,7 +72,7 @@ def print_secrets(creds, client_secret, refresh_key, suffix=""):
         client_id_key = "YOUTUBE_CLIENT_ID_COLOURDIAMONDSS"
         client_secret_key = "YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS"
     else:
-        # YT-JIYA intentionally uses the shared/default OAuth client pair.
+        # YT-JIYA and YT-TREND use the shared/default OAuth client pair.
         client_id_key = "YOUTUBE_CLIENT_ID"
         client_secret_key = "YOUTUBE_CLIENT_SECRET"
     print(f"{client_id_key}={client_id}")
@@ -108,8 +109,8 @@ def main():
     parser.add_argument(
         "--suffix",
         default="",
-        help="Account suffix for the secret key, e.g. JIYA -> "
-        "YOUTUBE_OAUTH_REFRESH_TOKEN_JIYA",
+        help="Account suffix for the secret key, e.g. JIYA / TREND -> "
+        "YOUTUBE_OAUTH_REFRESH_TOKEN_JIYA / YOUTUBE_OAUTH_REFRESH_TOKEN_TREND",
     )
     parser.add_argument(
         "--local",
