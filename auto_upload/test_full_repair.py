@@ -1139,18 +1139,22 @@ class FullRepairTests(unittest.TestCase):
         self.assertEqual(updates[0][1]["status"], "pending")
         self.assertIn("model media", updates[0][1]["notes"].lower())
 
-    def test_model_photo_video_urls_keep_canonical_and_add_live_folder(self):
+    def test_model_videos_stay_on_model_photo_video_folder(self):
         urls = optimized_runner._rewrite_media_urls(
-            ["https://colourdiam.com/Product/Model%20Photo%20Video/298/video.mp4"],
+            [
+                "https://colourdiam.com/Product/Jewellery/Model%20images/298/video.mp4",
+                "https://colourdiam.com/Product/Model%20Photo%20Video/298/1.jpeg",
+            ],
         )
         self.assertEqual(
             urls[0],
             "https://colourdiam.com/Product/Model%20Photo%20Video/298/video.mp4",
         )
-        self.assertIn(
-            "https://colourdiam.com/Product/Jewellery/Model%20images/298/video.mp4",
-            urls,
+        self.assertEqual(
+            urls[1],
+            "https://colourdiam.com/Product/Model%20Photo%20Video/298/1.jpeg",
         )
+        self.assertNotIn("Jewellery/Model%20images", urls[0])
 
     def test_model_media_preflight_jobs_are_revived_for_live_fallback(self):
         updates = []
@@ -1170,7 +1174,7 @@ class FullRepairTests(unittest.TestCase):
         revived = optimized_runner._revive_model_media_preflight_jobs(sheets, accounts)
         self.assertEqual(revived, 1)
         self.assertEqual(updates[0][1]["status"], "pending")
-        self.assertIn("model images", updates[0][1]["notes"].lower())
+        self.assertIn("model photo video", updates[0][1]["notes"].lower())
 
     def test_model_photo_video_http_fallback_uses_jewellery_model_images(self):
         from sheets_reader import SheetsReader

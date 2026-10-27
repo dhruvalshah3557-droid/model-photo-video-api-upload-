@@ -86,8 +86,9 @@ _LIVE_MEDIA_HOSTS = (
     "www.colourdiam.com",
     "colourdiam.com",
 )
-_MODEL_PHOTO_VIDEO_MARKER = "/product/model photo video/"
-_LIVE_MODEL_IMAGES_PREFIX = "https://colourdiam.com/Product/Jewellery/Model%20images/"
+_MODEL_PHOTO_VIDEO_PREFIX = "https://colourdiam.com/Product/Model%20Photo%20Video/"
+_JEWELLERY_MODEL_IMAGES_MARKER = "/product/jewellery/model images/"
+_VIDEO_EXTS = (".mp4", ".mov", ".avi", ".mkv", ".webm")
 _REWRITE_LOGGED = set()
 
 
@@ -137,37 +138,37 @@ def _rewrite_media_url(url):
         return raw
     host = (parsed.hostname or "").strip().lower()
     if host not in _DEAD_MEDIA_HOSTS:
-        return raw
+        return _model_video_folder_url(raw)
     rewritten = parsed._replace(netloc=_LIVE_MEDIA_HOSTS[0]).geturl()
     if host not in _REWRITE_LOGGED:
         _REWRITE_LOGGED.add(host)
         main.logger.info("Rewrote dead media host %s onto %s", host, _LIVE_MEDIA_HOSTS[0])
-    return rewritten
+    return _model_video_folder_url(rewritten)
 
 
-def _model_media_live_fallback(url):
-    """Keep the sheet Model Photo Video URL first; add the live site copy.
+def _is_video_media_url(url):
+    path = unquote(urlparse(str(url or "")).path or "").lower()
+    return any(path.endswith(ext) for ext in _VIDEO_EXTS)
 
-    colourdiam.com currently 404s the FTP/sheet folder
-    /Product/Model Photo Video/<sku>/<file> while the same files still
-    serve from /Product/Jewellery/Model images/<sku>/<file>.
-    """
+
+def _model_video_folder_url(url):
+    """Videos use Model Photo Video only, never Jewellery/Model images."""
     raw = str(url or "").strip()
-    if not raw:
-        return ""
+    if not raw or not _is_video_media_url(raw):
+        return raw
     try:
         parsed = urlparse(raw)
     except Exception:
-        return ""
+        return raw
     path = unquote(parsed.path or "")
     lowered = path.lower()
-    idx = lowered.find(_MODEL_PHOTO_VIDEO_MARKER)
+    idx = lowered.find(_JEWELLERY_MODEL_IMAGES_MARKER)
     if idx < 0:
-        return ""
-    rest = path[idx + len(_MODEL_PHOTO_VIDEO_MARKER):].lstrip("/")
+        return raw
+    rest = path[idx + len(_JEWELLERY_MODEL_IMAGES_MARKER):].lstrip("/")
     if not rest:
-        return ""
-    return _LIVE_MODEL_IMAGES_PREFIX + quote(rest, safe="/._-")
+        return raw
+    return _MODEL_PHOTO_VIDEO_PREFIX + quote(rest, safe="/._-")
 
 
 def _still_center_fallback(url):
@@ -193,9 +194,6 @@ def _rewrite_media_urls(urls, include_fallbacks=False):
     for url in urls or []:
         value = _rewrite_media_url(url)
         candidates = [value]
-        live_model = _model_media_live_fallback(value)
-        if live_model:
-            candidates.append(live_model)
         if include_fallbacks:
             jewelry = SheetsReader._model_media_http_fallback(value)
             if jewelry:
@@ -967,7 +965,7 @@ def _revive_model_media_preflight_jobs(sheets, accounts):
         sheets.update_job({"row": idx}, {
             "status": "pending",
             "error_message": "",
-            "notes": "Auto-revived after live Jewellery/Model images fallback for 404 Model Photo Video URLs",
+            "notes": "Auto-revived after Model Photo Video folder retry",
         })
         revived += 1
     if revived:
