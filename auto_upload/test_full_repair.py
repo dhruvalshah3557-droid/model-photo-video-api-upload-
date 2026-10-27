@@ -1401,6 +1401,22 @@ class FullRepairTests(unittest.TestCase):
         self.assertTrue(str(colour).endswith(".pickle"))
         self.assertIn("youtube_token_", colour.name)
 
+    def test_trendingjewels_uses_colourdiamondss_youtube_client(self):
+        import main
+        env = {
+            "YOUTUBE_CLIENT_ID_COLOURDIAMONDSS": "colour-client",
+            "YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS": "colour-secret",
+            "YOUTUBE_CLIENT_ID": "shared-client",
+            "YOUTUBE_CLIENT_SECRET": "shared-secret",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            colour = main._youtube_client_kwargs("YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS")
+            trend = main._youtube_client_kwargs("YOUTUBE_OAUTH_REFRESH_TOKEN_TRENDINGJEWELS")
+            jiya = main._youtube_client_kwargs("YOUTUBE_OAUTH_REFRESH_TOKEN_JIYA")
+        self.assertEqual(colour, {"client_id": "colour-client", "client_secret": "colour-secret"})
+        self.assertEqual(trend, colour)
+        self.assertEqual(jiya, {})
+
 
 if __name__ == "__main__":
     unittest.main()

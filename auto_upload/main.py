@@ -762,6 +762,24 @@ def _tag_value(job):
     return job.get("stock_id_tag", "") or job.get("sku", "")
 
 
+_COLOURDIAMONDSS_YOUTUBE_KEYS = {
+    "YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS",
+    "YOUTUBE_OAUTH_REFRESH_TOKEN_TRENDINGJEWELS",
+}
+
+
+def _youtube_client_kwargs(yt_key):
+    if yt_key not in _COLOURDIAMONDSS_YOUTUBE_KEYS:
+        return {}
+    client_kwargs = {
+        "client_id": os.getenv("YOUTUBE_CLIENT_ID_COLOURDIAMONDSS", "").strip(),
+        "client_secret": os.getenv("YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS", "").strip(),
+    }
+    if not all(client_kwargs.values()):
+        raise Exception("ColourDiamondss requires its dedicated YouTube client ID and secret")
+    return client_kwargs
+
+
 def publish_job(job, source, account):
     """Publish one job and return (post_id, published_url)."""
     media = resolve_media(job, source)
@@ -836,15 +854,7 @@ def publish_job(job, source, account):
                 f"No YouTube OAuth refresh token configured for {yt_key} "
                 "(a per-account token must be set; refusing to fall back to the shared token)"
             )
-        client_kwargs = {}
-        if yt_key == "YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS":
-            client_kwargs = {
-                "client_id": os.getenv("YOUTUBE_CLIENT_ID_COLOURDIAMONDSS", "").strip(),
-                "client_secret": os.getenv("YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS", "").strip(),
-            }
-            if not all(client_kwargs.values()):
-                raise Exception("ColourDiamondss requires its dedicated YouTube client ID and secret")
-        uploader = YouTubeUploader(refresh_token=yt_token, **client_kwargs)
+        uploader = YouTubeUploader(refresh_token=yt_token, **_youtube_client_kwargs(yt_key))
         title = (job.get("title") or source.get("product_name") or "Video")[:100]
         description = _youtube_reach_caption(source, account, caption)
         tags = _youtube_snippet_tags(description)

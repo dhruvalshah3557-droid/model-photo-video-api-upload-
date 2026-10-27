@@ -8,14 +8,19 @@ from urllib.parse import parse_qs, urlsplit
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+]
 DEFAULT_CLIENT_SECRET = Path(__file__).parent / "credentials" / "youtube_client_secret.json"
 DEFAULT_AUTH_CODE_FILE = Path(__file__).parent / "credentials" / "youtube_auth_code.txt"
-LOOPBACK_REDIRECT_URI = "http://127.0.0.1:8080/"
+LOOPBACK_REDIRECT_URI = "http://localhost"
 EXPECTED_CHANNEL_IDS = {
     "COLOURDIAMONDSS": "UCTWbcY-YtvAx2QUZKXt230A",
+    "TRENDINGJEWELS": "UCWSGpmJfBIzcA9O9kFWaRNw",
     "JIYA": "UCDFzWfIRvLu1LXq3mQrkj6Q",
 }
+COLOURDIAMONDSS_SUFFIXES = {"COLOURDIAMONDSS", "TRENDINGJEWELS"}
 
 
 def extract_code(value):
@@ -62,7 +67,7 @@ def print_secrets(creds, client_secret, refresh_key, suffix=""):
     print("\n" + "=" * 60)
     print("PASTE THESE INTO GITHUB SECRETS (exact KEY=VALUE pairs)")
     print("=" * 60)
-    if suffix.upper() == "COLOURDIAMONDSS":
+    if suffix.upper() in COLOURDIAMONDSS_SUFFIXES:
         client_id_key = "YOUTUBE_CLIENT_ID_COLOURDIAMONDSS"
         client_secret_key = "YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS"
     else:

@@ -13,7 +13,7 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify both YouTube channels
+      - name: Verify YouTube channels
         env:
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
@@ -21,6 +21,7 @@ jobs:
           YOUTUBE_CLIENT_ID_COLOURDIAMONDSS: ${{ secrets.YOUTUBE_CLIENT_ID_COLOURDIAMONDSS }}
           YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS: ${{ secrets.YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS }}
           YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS: ${{ secrets.YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS }}
+          YOUTUBE_OAUTH_REFRESH_TOKEN_TRENDINGJEWELS: ${{ secrets.YOUTUBE_OAUTH_REFRESH_TOKEN_TRENDINGJEWELS }}
         shell: bash
         run: |
           set -uo pipefail
@@ -60,5 +61,7 @@ jobs:
           verify_channel             "Colour Diam"             "$YOUTUBE_CLIENT_ID_COLOURDIAMONDSS"             "$YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS"             "$YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS"             "UCTWbcY-YtvAx2QUZKXt230A" || failures=1
 
           verify_channel             "JiyasDelight"             "$YOUTUBE_CLIENT_ID"             "$YOUTUBE_CLIENT_SECRET"             "$YOUTUBE_OAUTH_REFRESH_TOKEN_JIYA"             "UCDFzWfIRvLu1LXq3mQrkj6Q" || failures=1
+
+          verify_channel             "Trendingjewels"             "$YOUTUBE_CLIENT_ID_COLOURDIAMONDSS"             "$YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS"             "$YOUTUBE_OAUTH_REFRESH_TOKEN_TRENDINGJEWELS"             "UCWSGpmJfBIzcA9O9kFWaRNw" || failures=1
 
           exit "$failures"
