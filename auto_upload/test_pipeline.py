@@ -948,6 +948,21 @@ def test_glued_model_photo_and_video_links_use_model_photo_video_origin():
     print("OK test_glued_model_photo_and_video_links_use_model_photo_video_origin")
 
 
+def test_dead_model_photo_video_http_urls_fall_back_to_jewellery_folder():
+    from sheets_reader import SheetsReader
+
+    fallback = SheetsReader._model_media_http_fallback(
+        "https://colourdiam.com/Product/Model%20Photo%20Video/414/1.jpeg",
+        "414",
+    )
+    assert fallback == "https://colourdiam.com/Product/Jewellery/Model%20images/414/1.jpeg"
+    assert SheetsReader._model_media_http_fallback(
+        "https://cdn.shopify.com/s/files/1/0651/4135/1614/files/1996_6379_1.mp4",
+        "1996_6379",
+    ) == ""
+    print("OK test_dead_model_photo_video_http_urls_fall_back_to_jewellery_folder")
+
+
 def test_dead_cdn_hosts_are_rewritten_onto_live_origin():
     import optimized_runner
 
@@ -1054,6 +1069,7 @@ if __name__ == "__main__":
     test_source_import_builds_product_name_from_details()
     test_compound_sku_product_links_are_not_false_mismatches()
     test_glued_model_photo_and_video_links_use_model_photo_video_origin()
+    test_dead_model_photo_video_http_urls_fall_back_to_jewellery_folder()
     test_dead_cdn_hosts_are_rewritten_onto_live_origin()
     test_youtube_jobs_are_queued_when_only_product_images_mismatch()
     test_dns_and_integrity_preflight_failures_are_retried()

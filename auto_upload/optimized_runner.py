@@ -197,6 +197,9 @@ def _rewrite_media_urls(urls, include_fallbacks=False):
         if live_model:
             candidates.append(live_model)
         if include_fallbacks:
+            jewelry = SheetsReader._model_media_http_fallback(value)
+            if jewelry:
+                candidates = [jewelry] + [item for item in candidates if item != jewelry]
             center = _still_center_fallback(value)
             if center:
                 candidates.append(center)
@@ -319,16 +322,20 @@ def resolve_media_fixed(job, source):
         media.extend(list(source.get("side_images", [])))
         return _rewrite_media_urls(main._dedupe_media(media)[:10])
     media = ORIGINAL_RESOLVE_MEDIA(job, source)
-    if sku and selection.startswith("model_photo:"):
-        media = [
-            SheetsReader._rewrite_model_media_url(url, sku, "image")
-            for url in media
-        ]
-    elif sku and selection.startswith("model_video:"):
-        media = [
-            SheetsReader._rewrite_model_media_url(url, sku, "video")
-            for url in media
-        ]
+    if selection.startswith("model_photo:"):
+        if sku:
+            media = [
+                SheetsReader._rewrite_model_media_url(url, sku, "image")
+                for url in media
+            ]
+        return _rewrite_media_urls(media, include_fallbacks=True)
+    if selection.startswith("model_video:"):
+        if sku:
+            media = [
+                SheetsReader._rewrite_model_media_url(url, sku, "video")
+                for url in media
+            ]
+        return _rewrite_media_urls(media, include_fallbacks=True)
     return _rewrite_media_urls(media)
 
 
@@ -1365,11 +1372,12 @@ def _healthy_candidates(
                             0 if _job_sku(job) == paired_sku else 1,
                         )
                     )
-            # First job is one per account. Extra platform budget stays on
-            # model photo/video so product carousels cannot consume leftover
-            # slots. Unused YouTube/TikTok capacity is filled later.
+            # Facebook/Instagram first pass is one job per account so leftover
+            # budget cannot dump onto Japan/Russia. YouTube may still upload
+            # multiple model videos from the same channel in one run. Extra
+            # Facebook/Instagram model slots are filled later, round-robin.
             jobs_for_account = 1
-            if any(is_model_media(job) for job in scan_jobs):
+            if platform == "youtube" and any(is_model_media(job) for job in scan_jobs):
                 jobs_for_account = max(1, wanted - platform_selected)
             account_selected = 0
             already_ids = {id(job) for job in selected}
@@ -1468,6 +1476,9 @@ def _fill_model_media_leftover(
     if leftover <= 0:
         return leftover, housekeeping
     already_ids = {id(job) for job in selected}
+    already_accounts = {
+        str(job.get("account_id", "") or "").strip() for job in selected
+    }
     order = []
     for platform in ("facebook", "instagram"):
         if platform == "instagram" and instagram_cooldown:
@@ -1485,6 +1496,7 @@ def _fill_model_media_leftover(
                 continue
             order.append((platform, account_id, account))
     order.sort(key=lambda item: (
+        0 if item[1] not in already_accounts else 1,
         _minimum_delivery_priority(item[1], recent_upload_activity),
         item[1],
     ))
@@ -1493,6 +1505,11 @@ def _fill_model_media_leftover(
     progressed = True
     while leftover > 0 and len(selected) < limit and progressed:
         progressed = False
+        order.sort(key=lambda item: (
+            0 if item[1] not in already_accounts else 1,
+            _minimum_delivery_priority(item[1], recent_upload_activity),
+            item[1],
+        ))
         for platform, account_id, account in order:
             if leftover <= 0 or len(selected) >= limit:
                 break
@@ -1533,6 +1550,7 @@ def _fill_model_media_leftover(
                 continue
             selected.append(chosen)
             already_ids.add(id(chosen))
+            already_accounts.add(account_id)
             leftover -= 1
             progressed = True
             if platform == "instagram":

@@ -106,6 +106,7 @@ class SheetsReader:
     MODEL_IMAGE_DEFAULTS = ("1.jpeg", "2.jpeg", "3.jpeg", None)
     MODEL_VIDEO_DEFAULTS = ("video.mp4", "video-2.mp4", "video-3.mp4", None)
     MODEL_MEDIA_PREFIX = "https://colourdiam.com/Product/Model%20Photo%20Video/"
+    MODEL_MEDIA_HTTP_FALLBACK_PREFIX = "https://colourdiam.com/Product/Jewellery/Model%20images/"
     _COLOURDIAM_HOST_RE = re.compile(r"(^|\.)colourdiam\.com$")
     _DEAD_MODEL_HOSTS = {
         "images.colourdiam.com",
@@ -346,6 +347,41 @@ class SheetsReader:
     def _is_model_photo_video_path(cls, url):
         path = unquote(urlparse(str(url or "")).path or "").lower()
         return "/product/model photo video/" in path
+
+    @classmethod
+    def _model_media_http_fallback(cls, url, sku=None):
+        raw = str(url or "").strip()
+        if not raw or not cls._is_model_photo_video_path(raw):
+            return ""
+        try:
+            parsed = urlparse(raw)
+        except Exception:
+            return ""
+        path = unquote(parsed.path or "").rstrip("/")
+        parts = [part for part in path.split("/") if part]
+        sku_folder = ""
+        filename = ""
+        for i, part in enumerate(parts):
+            if part.lower() != "model photo video" or i + 1 >= len(parts):
+                continue
+            sku_folder = parts[i + 1]
+            if i + 2 < len(parts):
+                filename = parts[-1]
+            break
+        if not sku_folder and sku:
+            sku_folder = str(sku).strip()
+        if not filename:
+            filename = os.path.basename(path)
+        if not sku_folder or not filename:
+            return ""
+        if filename.lower() in {"model photo video", "product"}:
+            return ""
+        return (
+            cls.MODEL_MEDIA_HTTP_FALLBACK_PREFIX
+            + quote(sku_folder, safe="_-")
+            + "/"
+            + quote(filename, safe="._-")
+        )
 
     @classmethod
     def _rewrite_model_media_url(cls, url, sku, kind, filename=None):

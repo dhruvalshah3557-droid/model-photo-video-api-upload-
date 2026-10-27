@@ -56,12 +56,17 @@ class FullRepairTests(unittest.TestCase):
                 "https://colourdiam.com/Product/Model%20Photo%20Video/298/2.jpeg",
             ]
         }
+        media = optimized_runner.resolve_media_fixed(
+            {"platform": "facebook", "media_selection": "model_photo:1"},
+            source,
+        )
         self.assertEqual(
-            optimized_runner.resolve_media_fixed(
-                {"platform": "facebook", "media_selection": "model_photo:1"},
-                source,
-            ),
-            ["https://colourdiam.com/Product/Model%20Photo%20Video/298/2.jpeg"],
+            media[0],
+            "https://colourdiam.com/Product/Jewellery/Model%20images/298/2.jpeg",
+        )
+        self.assertIn(
+            "https://colourdiam.com/Product/Model%20Photo%20Video/298/2.jpeg",
+            media,
         )
 
     def test_model_media_is_preferred_over_product_carousel(self):
@@ -1166,6 +1171,57 @@ class FullRepairTests(unittest.TestCase):
         self.assertEqual(revived, 1)
         self.assertEqual(updates[0][1]["status"], "pending")
         self.assertIn("model images", updates[0][1]["notes"].lower())
+
+    def test_model_photo_video_http_fallback_uses_jewellery_model_images(self):
+        from sheets_reader import SheetsReader
+
+        canonical = "https://colourdiam.com/Product/Model%20Photo%20Video/298/video.mp4"
+        self.assertEqual(
+            SheetsReader._model_media_http_fallback(canonical, "298"),
+            "https://colourdiam.com/Product/Jewellery/Model%20images/298/video.mp4",
+        )
+        urls = optimized_runner._rewrite_media_urls(
+            [canonical],
+            include_fallbacks=True,
+        )
+        self.assertEqual(urls[0], "https://colourdiam.com/Product/Jewellery/Model%20images/298/video.mp4")
+        self.assertIn(canonical, urls)
+        media = optimized_runner.resolve_media_fixed(
+            {"platform": "facebook", "media_selection": "model_video:0", "sku": "414"},
+            {"sku": "414", "model_videos": [canonical.replace("/298/", "/414/")]},
+        )
+        self.assertEqual(
+            media[0],
+            "https://colourdiam.com/Product/Jewellery/Model%20images/414/video.mp4",
+        )
+
+    def test_facebook_first_pass_is_one_job_per_account(self):
+        jobs = []
+        accounts = {}
+        sources = {}
+        for aid in ("FB-A", "FB-B", "FB-C"):
+            accounts[aid] = {"enabled": True, "platform": "facebook", "timezone": "Asia/Bangkok"}
+            sources["1"] = {
+                "model_videos": ["https://media.example/model0.mp4", "https://media.example/model1.mp4"],
+                "model_images": ["https://media.example/model.jpg"],
+            }
+            jobs.extend([
+                {"job_id": "1-%s-model_video-0" % aid, "sku": "1", "account_id": aid, "platform": "facebook", "format": "video", "media_selection": "model_video:0", "row": 10, "attempts": 0, "notes": ""},
+                {"job_id": "1-%s-model_video-1" % aid, "sku": "1", "account_id": aid, "platform": "facebook", "format": "video", "media_selection": "model_video:1", "row": 11, "attempts": 0, "notes": ""},
+                {"job_id": "1-%s-model_photo-0" % aid, "sku": "1", "account_id": aid, "platform": "facebook", "format": "carousel", "media_selection": "model_photo:0", "row": 20, "attempts": 0, "notes": ""},
+            ])
+        sheets = types.SimpleNamespace(update_job=lambda *args: None)
+        with patch("optimized_runner._platform_limits", return_value={"facebook": 3, "instagram": 0, "youtube": 0, "line": 0}), \
+             patch("optimized_runner._local_slot_due", return_value=True), \
+             patch("optimized_runner._rotation_rank", return_value=0), \
+             patch("optimized_runner._is_clean_source", return_value=(True, "")), \
+             patch("optimized_runner._media_preflight_reason", return_value=""):
+            selected = optimized_runner._healthy_candidates(
+                jobs, accounts, sources, sheets, limit=3
+            )
+        self.assertEqual(len(selected), 3)
+        self.assertEqual({job["account_id"] for job in selected}, {"FB-A", "FB-B", "FB-C"})
+        self.assertTrue(all(is_model_media(job) for job in selected))
 
     def test_still_jpg_preflight_also_tries_center_image(self):
         urls = optimized_runner._rewrite_media_urls(
