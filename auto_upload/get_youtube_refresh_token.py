@@ -72,7 +72,7 @@ def print_secrets(creds, client_secret, refresh_key, suffix=""):
         client_id_key = "YOUTUBE_CLIENT_ID_COLOURDIAMONDSS"
         client_secret_key = "YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS"
     else:
-        # YT-JIYA and YT-TREND use the shared/default OAuth client pair.
+        # YT-JIYA and YT-TRENDJEWEL use the shared/default OAuth client pair.
         client_id_key = "YOUTUBE_CLIENT_ID"
         client_secret_key = "YOUTUBE_CLIENT_SECRET"
     print(f"{client_id_key}={client_id}")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enable YT-CD, YT-JIYA and YT-TREND on the Accounts sheet without rewriting other rows."""
+"""Enable YT-CD, YT-JIYA, YT-TREND and YT-TRENDJEWEL on the Accounts sheet without rewriting other rows."""
 import sys
 
 from sheets_reader import SheetsReader
@@ -117,6 +117,43 @@ ACCOUNTS = (
                 "YouTube @trendingjewels channel enabled. Uses "
                 "YOUTUBE_OAUTH_REFRESH_TOKEN_TRENDINGJEWELS with the Colour Diam "
                 "Google client (colourdiamondss@gmail.com)."
+            ),
+        },
+    },
+    {
+        "account_id": "YT-TRENDJEWEL",
+        "updates": {
+            "enabled": "Yes",
+            "credential_property_key": "YOUTUBE_OAUTH_REFRESH_TOKEN_TREND",
+            "approval_required": "No",
+            "notes": (
+                "YouTube @trendingjewel channel enabled. Uses "
+                "YOUTUBE_OAUTH_REFRESH_TOKEN_TREND."
+            ),
+        },
+        "new_row": {
+            "account_id": "YT-TRENDJEWEL",
+            "platform": "YouTube",
+            "account_name": "Trending Jewel YouTube",
+            "platform_account_id": "UCiOkTy5C8_dZw-TlzYKeOVA",
+            "username_or_channel": "trendingjewel",
+            "primary_language": "en-GB",
+            "fallback_language": "en-GB",
+            "timezone": "Asia/Bangkok",
+            "enabled": "Yes",
+            "allowed_formats": "YouTube Video, YouTube Short",
+            "caption_style": "Search-friendly luxury education",
+            "hashtag_set": "YouTube keywords; 3-5 hashtags",
+            "cta_rule": "Product link in description",
+            "posting_window": "12:00-21:00 local",
+            "min_gap_minutes": "360",
+            "product_tagging": "No",
+            "catalog_or_store_id": "",
+            "credential_property_key": "YOUTUBE_OAUTH_REFRESH_TOKEN_TREND",
+            "approval_required": "No",
+            "notes": (
+                "YouTube @trendingjewel channel enabled. Uses "
+                "YOUTUBE_OAUTH_REFRESH_TOKEN_TREND."
             ),
         },
     },

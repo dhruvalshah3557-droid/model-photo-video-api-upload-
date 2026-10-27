@@ -35,7 +35,7 @@ jobs:
           GOOGLE_SHEET_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEET_CREDENTIALS_JSON || secrets.APIKEYJSON }}
         run: echo "$GOOGLE_SHEET_CREDENTIALS_JSON" > credentials/service_account.json
 
-      - name: Enable YT-CD, YT-JIYA and YT-TREND on Accounts sheet
+      - name: Enable YT-CD, YT-JIYA, YT-TREND and YT-TRENDJEWEL on Accounts sheet
         env:
           GOOGLE_SHEET_CREDENTIALS: credentials/service_account.json
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}

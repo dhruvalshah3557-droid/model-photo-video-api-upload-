@@ -1412,9 +1412,11 @@ class FullRepairTests(unittest.TestCase):
         with patch.dict(os.environ, env, clear=False):
             colour = main._youtube_client_kwargs("YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS")
             trend = main._youtube_client_kwargs("YOUTUBE_OAUTH_REFRESH_TOKEN_TRENDINGJEWELS")
+            jewel = main._youtube_client_kwargs("YOUTUBE_OAUTH_REFRESH_TOKEN_TREND")
             jiya = main._youtube_client_kwargs("YOUTUBE_OAUTH_REFRESH_TOKEN_JIYA")
         self.assertEqual(colour, {"client_id": "colour-client", "client_secret": "colour-secret"})
         self.assertEqual(trend, colour)
+        self.assertEqual(jewel, {})
         self.assertEqual(jiya, {})
 
 
