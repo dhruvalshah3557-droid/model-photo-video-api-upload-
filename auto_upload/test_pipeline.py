@@ -981,8 +981,9 @@ def test_dead_cdn_hosts_are_rewritten_onto_live_origin():
 
 def test_model_photo_video_404s_fall_back_to_jewellery_model_images():
     import optimized_runner
+    from sheets_reader import SheetsReader
 
-    fallback = optimized_runner._jewellery_model_images_fallback(
+    fallback = SheetsReader._model_media_http_fallback(
         "https://colourdiam.com/Product/Model%20Photo%20Video/416/center.jpeg"
     )
     assert fallback == (
@@ -992,9 +993,11 @@ def test_model_photo_video_404s_fall_back_to_jewellery_model_images():
         ["https://colourdiam.com/Product/Model%20Photo%20Video/416/center.jpeg"],
         include_fallbacks=True,
     )
-    assert urls[0] == "https://colourdiam.com/Product/Model%20Photo%20Video/416/center.jpeg"
-    assert (
+    assert urls[0] == (
         "https://colourdiam.com/Product/Jewellery/Model%20images/416/center.jpeg"
+    )
+    assert (
+        "https://colourdiam.com/Product/Model%20Photo%20Video/416/center.jpeg"
         in urls
     )
     resolved = optimized_runner.resolve_media_fixed(
@@ -1003,9 +1006,11 @@ def test_model_photo_video_404s_fall_back_to_jewellery_model_images():
             "https://colourdiam.com/Product/Model%20Photo%20Video/298/video.mp4"
         ]},
     )
-    assert resolved[0] == "https://colourdiam.com/Product/Model%20Photo%20Video/298/video.mp4"
-    assert (
+    assert resolved[0] == (
         "https://colourdiam.com/Product/Jewellery/Model%20images/298/video.mp4"
+    )
+    assert (
+        "https://colourdiam.com/Product/Model%20Photo%20Video/298/video.mp4"
         in resolved
     )
     print("OK test_model_photo_video_404s_fall_back_to_jewellery_model_images")

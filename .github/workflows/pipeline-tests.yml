@@ -2,7 +2,7 @@ name: Pipeline Safety Tests
 
 on:
   push:
-    branches: [master]
+    branches: [master, main]
     paths:
       - "auto_upload/**"
       - ".github/workflows/auto-upload-production.yml"

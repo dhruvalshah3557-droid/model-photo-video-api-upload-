@@ -3,7 +3,7 @@ name: Enable YouTube Accounts
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [master, main]
     paths:
       - auto_upload/enable_youtube_accounts.py
       - .github/workflows/enable-youtube.yml

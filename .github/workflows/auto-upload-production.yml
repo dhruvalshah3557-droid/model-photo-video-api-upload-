@@ -6,7 +6,7 @@ on:
     - cron: "0,10,20,30,40,50 * * * *"
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [master, main]
     paths:
       - .github/production-trigger.txt
 
