@@ -186,6 +186,13 @@ CAPTION_TEMPLATES = {
         "Bago sa koleksyon: {title}. Alahas na namumukod-tangi.",
         "Gawing espesyal ang bawat sandali sa {title}.",
     ],
+    "hi": [
+        "{title} — कालातीत लालित्य और अनोखी चमक।",
+        "{title} की खूबसूरती देखें।",
+        "{title} के साथ अपनी स्टाइल निखारें।",
+        "नई आवक: {title}। एक अनोखा आभूषण।",
+        "हर पल को {title} के साथ खास बनाएं।",
+    ],
 }
 
 HASHTAG_TEMPLATES = {
@@ -215,6 +222,7 @@ HASHTAG_TEMPLATES = {
     "vi": ["#ColourDiam", "#KimCương", "#TrangSức", "#TrangSứcCaoCấp", "#ViệtNam"],
     "id": ["#ColourDiam", "#Berlian", "#Perhiasan", "#PerhiasanMewah", "#Indonesia"],
     "fil": ["#ColourDiam", "#Brilyante", "#Alahas", "#MarangyangAlahas", "#Pilipinas"],
+    "hi": ["#ColourDiam", "#डायमंड", "#ज्वेलरी", "#नेचुरलडायमंड", "#कलरडायमंड"],
 }
 
 PAGE_LANG_MAP = {

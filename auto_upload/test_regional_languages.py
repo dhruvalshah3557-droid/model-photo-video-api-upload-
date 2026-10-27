@@ -545,6 +545,45 @@ class RegionalLanguageTests(unittest.TestCase):
         regional_codes = set(SheetsReader.LANG_CAPTION_COLS) - {"en"}
         self.assertTrue(regional_codes <= set(main._PRODUCT_LINK_LABELS))
 
+    def test_youtube_description_appends_multi_regional_captions_and_tags(self):
+        source = {
+            "sku": "298",
+            "product_name": "0.16 Ct Fancy Deep Pink Marquise Diamond SI2",
+            "details": "Sku - 298\nWeight - 0.16\nShape - Marquise",
+            "product_link": "https://colourdiam.com/Product/Diamond/298/",
+            "facebook_caption": "English Facebook caption 0.16 Ct Fancy Deep Pink Marquise",
+            "instagram_caption": "English Instagram caption 0.16 Ct Fancy Deep Pink Marquise",
+            "youtube_shorts_caption": "English YouTube caption 0.16 Ct Fancy Deep Pink Marquise",
+            "hashtags": "#ColourDiam #diamond",
+            "lang_captions": {
+                "th": "เพชรแฟนซีดีพ์พิงค์รูปมาคีส 0.16 กะรัต",
+                "ja": "0.16カラットのファンシーディープピンクマーキースダイヤモンド",
+            },
+            "lang_hashtags": {
+                "th": "#เพชรสี #เพชรธรรมชาติ",
+                "ja": "#カラーダイヤモンド",
+            },
+        }
+        account = {
+            "primary_language": "en-GB",
+            "account_name": "Colour Diam YouTube",
+        }
+        caption = main.build_caption({"platform": "youtube"}, source, account)
+        description = main._youtube_reach_caption(source, account, caption)
+        self.assertIn("English YouTube caption", description)
+        self.assertIn("เพชรแฟนซีดีพ์พิงค์รูปมาคีส", description)
+        self.assertIn("#カラーダイヤモンド", description)
+        self.assertIn("#DiamanteDeColor", description)
+        self.assertIn("#컬러다이아몬드", description)
+        self.assertIn("#彩钻", description)
+        self.assertIn("#कलरडायमंड", description)
+        tags = main._youtube_snippet_tags(description)
+        self.assertIn("ColourDiam", tags)
+        self.assertIn("fancy color diamond", tags)
+        self.assertTrue(any("เพชรสี" in tag or tag == "เพชรสี" for tag in tags))
+        facebook = main.build_caption({"platform": "facebook"}, source, account)
+        self.assertNotIn("#DiamanteDeColor", facebook)
+
 
 if __name__ == "__main__":
     unittest.main()

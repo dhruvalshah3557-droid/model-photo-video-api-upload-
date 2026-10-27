@@ -111,7 +111,7 @@ jobs:
           # 24h floor; leftover slots stay on model photo/video.
           IG_MAX_JOBS_PER_RUN: "8"
           # YouTube leftover slots stay on model videos from the same channel.
-          YT_MAX_JOBS_PER_RUN: "6"
+          YT_MAX_JOBS_PER_RUN: "12"
           IG_AUDIO_SEARCH_QUERY: ${{ vars.IG_AUDIO_SEARCH_QUERY }}
           IG_AUDIO_SEARCH_QUERIES: ${{ vars.IG_AUDIO_SEARCH_QUERIES }}
           IG_AUDIO_VOLUME: "80"

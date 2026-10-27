@@ -374,6 +374,88 @@ def _normalize_hashtags(value):
     return " ".join(normalized)
 
 
+_YOUTUBE_REACH_LANGS = (
+    "en", "th", "ja", "ko", "zh", "zh-hant", "ar", "he", "ru", "vi",
+    "id", "es", "fr", "it", "de", "tr", "hi",
+)
+
+_YOUTUBE_REACH_HASHTAGS = {
+    "en": "#ColourDiam #FancyColorDiamond #NaturalDiamond #FineJewelry",
+    "th": "#เพชรสี #เพชรธรรมชาติ #เครื่องประดับหรู #ColourDiam",
+    "ja": "#カラーダイヤモンド #天然ダイヤモンド #ジュエリー #ColourDiam",
+    "ko": "#컬러다이아몬드 #천연다이아몬드 #주얼리 #ColourDiam",
+    "zh": "#彩钻 #天然钻石 #珠宝 #ColourDiam",
+    "zh-hant": "#彩鑽 #天然鑽石 #珠寶 #ColourDiam",
+    "ar": "#ألماس_ملون #ألماس_طبيعي #مجوهرات_فاخرة #ColourDiam",
+    "he": "#יהלום_צבעוני #יהלום_טבעי #תכשיטי_יוקרה #ColourDiam",
+    "ru": "#ЦветнойБриллиант #НатуральныйБриллиант #ЮвелирныеИзделия #ColourDiam",
+    "vi": "#KimCươngMàu #KimCươngTựNhiên #TrangSứcCaoCấp #ColourDiam",
+    "id": "#BerlianWarna #BerlianAlami #PerhiasanMewah #ColourDiam",
+    "es": "#DiamanteDeColor #DiamanteNatural #AltaJoyería #ColourDiam",
+    "fr": "#DiamantDeCouleur #DiamantNaturel #HauteJoaillerie #ColourDiam",
+    "it": "#DiamanteColorato #DiamanteNaturale #AltaGioielleria #ColourDiam",
+    "de": "#Farbdiamant #NatürlicherDiamant #Luxusschmuck #ColourDiam",
+    "tr": "#RenkliPırlanta #DoğalElmas #LüksMücevher #ColourDiam",
+    "hi": "#कलरडायमंड #नेचुरलडायमंड #ज्वेलरी #ColourDiam",
+}
+
+_YOUTUBE_TAG_WORDS = (
+    "ColourDiam", "fancy color diamond", "natural diamond", "coloured diamond",
+    "GIA diamond", "loose diamond", "fine jewelry", "luxury jewellery",
+    "เพชรสี", "เพชรธรรมชาติ", "カラーダイヤモンド", "컬러다이아몬드",
+    "彩钻", "彩鑽", "ألماس ملون", "יהלום צבעוני", "цветной бриллиант",
+    "kim cương màu", "berlian warna", "diamante de color", "diamant de couleur",
+    "diamante colorato", "farbdiamant", "renkli pırlanta", "कलर डायमंड",
+)
+
+
+def _youtube_snippet_tags(caption):
+    tags = []
+    seen = set()
+    for word in _YOUTUBE_TAG_WORDS:
+        key = word.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        tags.append(word[:100])
+    for token in re.findall(r"#[^\s#]+", str(caption or "")):
+        clean = token.lstrip("#").strip()
+        if not clean:
+            continue
+        key = clean.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        tags.append(clean[:100])
+        if len(tags) >= 40:
+            break
+    return tags[:40]
+
+
+def _youtube_reach_caption(source, account, caption_text):
+    sections = [str(caption_text or "").strip()]
+    used_langs = {_lang_code(account.get("primary_language", "")) or "en"}
+    lang_captions = source.get("lang_captions") or {}
+    lang_hashtags = source.get("lang_hashtags") or {}
+    for lang in _YOUTUBE_REACH_LANGS:
+        if lang in used_langs:
+            continue
+        localized = str(lang_captions.get(lang, "") or "").strip()
+        if localized and _caption_product_mismatch_reason(localized, source):
+            localized = ""
+        if not localized:
+            localized, _ = _generated_product_caption(source, account, lang)
+        tags = _normalize_hashtags(lang_hashtags.get(lang)) or _YOUTUBE_REACH_HASHTAGS.get(lang, "")
+        if not tags:
+            tags = _normalize_hashtags(_REGIONAL_FALLBACK_HASHTAGS.get(lang, ""))
+        block = f"{localized}\n{tags}".strip() if tags else localized
+        if block:
+            sections.append(block)
+            used_langs.add(lang)
+    merged = "\n\n".join(part for part in sections if part).strip()
+    return merged[:5000]
+
+
 _REGIONAL_FALLBACK_HASHTAGS = {
     "ar": "#ألماس #مجوهرات #مجوهرات_فاخرة",
     "vi": "#KimCương #TrangSức #TrangSứcCaoCấp",
@@ -764,8 +846,9 @@ def publish_job(job, source, account):
                 raise Exception("ColourDiamondss requires its dedicated YouTube client ID and secret")
         uploader = YouTubeUploader(refresh_token=yt_token, **client_kwargs)
         title = (job.get("title") or source.get("product_name") or "Video")[:100]
-        description = caption
-        response = uploader.upload(media[0], title, description)
+        description = _youtube_reach_caption(source, account, caption)
+        tags = _youtube_snippet_tags(description)
+        response = uploader.upload(media[0], title, description, tags=tags)
         post_id = response.get("id", "")
         url = f"https://youtu.be/{post_id}"
         return post_id, url
