@@ -1,0 +1,125 @@
+name: Save YouTube @trendingjewel token
+
+on:
+  workflow_dispatch:
+    inputs:
+      redirect_url:
+        description: "Paste the full http://localhost/?code=... address after Google login. Leave empty to only get the login link."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  save:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create login link or save token
+        env:
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          REDIRECT_URL: ${{ inputs.redirect_url }}
+          EXPECTED_CHANNEL_ID: UCiOkTy5C8_dZw-TlzYKeOVA
+          REDIRECT_URI: http://localhost
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$YOUTUBE_CLIENT_ID" || -z "$YOUTUBE_CLIENT_SECRET" ]]; then
+            echo "ERROR: YOUTUBE_CLIENT_ID or YOUTUBE_CLIENT_SECRET is missing."
+            exit 1
+          fi
+
+          login_url="$(python3 - <<'PY'
+          import os, urllib.parse
+          params = {
+              "client_id": os.environ["YOUTUBE_CLIENT_ID"],
+              "redirect_uri": os.environ["REDIRECT_URI"],
+              "response_type": "code",
+              "scope": "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly",
+              "access_type": "offline",
+              "prompt": "consent",
+              "include_granted_scopes": "true",
+          }
+          print("https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params))
+          PY
+          )"
+
+          if [[ -z "${REDIRECT_URL:-}" ]]; then
+            echo "LOGIN_URL=$login_url"
+            {
+              echo "## Next step"
+              echo "1. Open this Google login link while signed into the @trendingjewel channel:"
+              echo
+              echo "$login_url"
+              echo
+              echo "2. Click Allow."
+              echo "3. The browser will fail to open localhost. Copy the full address bar."
+              echo "4. Re-run this workflow and paste that address into redirect_url."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "::add-mask::$REDIRECT_URL"
+          token_response="$(python3 - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          raw = os.environ["REDIRECT_URL"].strip()
+          if "code=" in raw:
+              query = urllib.parse.urlsplit(raw).query
+              code = urllib.parse.parse_qs(query).get("code", [raw])[0]
+          else:
+              code = raw
+          data = urllib.parse.urlencode({
+              "client_id": os.environ["YOUTUBE_CLIENT_ID"],
+              "client_secret": os.environ["YOUTUBE_CLIENT_SECRET"],
+              "code": code,
+              "grant_type": "authorization_code",
+              "redirect_uri": os.environ["REDIRECT_URI"],
+          }).encode()
+          req = urllib.request.Request("https://oauth2.googleapis.com/token", data=data)
+          try:
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  print(resp.read().decode())
+          except urllib.error.HTTPError as exc:
+              print(exc.read().decode())
+          PY
+          )"
+
+          refresh_token="$(jq -r '.refresh_token // empty' <<<"$token_response")"
+          access_token="$(jq -r '.access_token // empty' <<<"$token_response")"
+          if [[ -z "$refresh_token" || -z "$access_token" ]]; then
+            echo "ERROR: Google rejected the login code."
+            jq -r '(.error // "unknown") + ": " + (.error_description // "no description")' <<<"$token_response"
+            echo "The code expires in a few minutes. Get a fresh login link by running this workflow with an empty redirect_url."
+            exit 1
+          fi
+          echo "::add-mask::$refresh_token"
+          echo "::add-mask::$access_token"
+
+          channel_response="$(curl --fail-with-body --silent --show-error \
+            --header "Authorization: Bearer $access_token" \
+            'https://www.googleapis.com/youtube/v3/channels?part=id,snippet&mine=true')"
+          channel_id="$(jq -r '.items[0].id // empty' <<<"$channel_response")"
+          channel_title="$(jq -r '.items[0].snippet.title // empty' <<<"$channel_response")"
+          if [[ "$channel_id" != "$EXPECTED_CHANNEL_ID" ]]; then
+            echo "ERROR: Wrong YouTube channel: ${channel_title:-unknown} (${channel_id:-unknown}). Expected $EXPECTED_CHANNEL_ID (@trendingjewel)."
+            exit 1
+          fi
+
+          echo "OK: authenticated as $channel_title ($channel_id)."
+          {
+            echo "## Token ready for @trendingjewel"
+            echo
+            echo "GitHub secret name:"
+            echo
+            echo "YOUTUBE_OAUTH_REFRESH_TOKEN_TREND"
+            echo
+            echo "Paste only this value:"
+            echo
+            echo '```'
+            echo "$refresh_token"
+            echo '```'
+            echo
+            echo "Then delete this workflow run."
+          } >> "$GITHUB_STEP_SUMMARY"
