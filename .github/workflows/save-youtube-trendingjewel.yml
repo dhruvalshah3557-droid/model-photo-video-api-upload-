@@ -21,9 +21,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
       - name: Create login link or save token
         env:
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           REDIRECT_URL: ${{ inputs.redirect_url }}
-        run: python save_youtube_trendingjewel.py
+        run: python3 save_youtube_trendingjewel.py
