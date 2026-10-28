@@ -1,0 +1,34 @@
+name: Save YouTube @colourdiamondss token
+
+on:
+  workflow_dispatch:
+    inputs:
+      redirect_url:
+        description: "Paste the full http://localhost/?code=... address after Google login. Leave empty to only get the login link."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  save:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: auto_upload
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Create login link or save token
+        env:
+          YOUTUBE_CLIENT_ID_COLOURDIAMONDSS: ${{ secrets.YOUTUBE_CLIENT_ID_COLOURDIAMONDSS }}
+          YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS: ${{ secrets.YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS }}
+          REDIRECT_URL: ${{ inputs.redirect_url }}
+        run: python3 save_youtube_colourdiamondss.py

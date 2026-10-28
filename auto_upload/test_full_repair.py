@@ -1538,6 +1538,19 @@ class FullRepairTests(unittest.TestCase):
         )
         self.assertEqual(_extract_code("raw-code"), "raw-code")
 
+    def test_colourdiamondss_auth_code_is_extracted_from_localhost_url(self):
+        from save_youtube_colourdiamondss import _extract_code
+        url = (
+            "http://localhost/?iss=https://accounts.google.com&code="
+            "4/0AXlqoi5rIO6wuiT3oHA1JRJoytRFdu0LjxXGseyzTl62mGHYqytvIWslazrTNiKNkVQXTQ"
+            "&scope=https://www.googleapis.com/auth/youtube.upload"
+        )
+        self.assertEqual(
+            _extract_code(url),
+            "4/0AXlqoi5rIO6wuiT3oHA1JRJoytRFdu0LjxXGseyzTl62mGHYqytvIWslazrTNiKNkVQXTQ",
+        )
+        self.assertEqual(_extract_code("raw-code"), "raw-code")
+
 
 if __name__ == "__main__":
     unittest.main()
