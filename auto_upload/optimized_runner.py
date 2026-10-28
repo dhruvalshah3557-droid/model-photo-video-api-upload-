@@ -66,6 +66,7 @@ _UNUSABLE_PENDING_MARKERS = (
     "401 client error",
     "unauthorized for url",
     "token has been expired or revoked",
+    "no youtube oauth refresh token configured",
 )
 YOUTUBE_AUTH_DEAD_HOURS = 12
 _RETRIABLE_PREFLIGHT_MARKERS = (
@@ -546,17 +547,50 @@ def _enabled_account_order(accounts, platform):
     ]
 
 
+def _youtube_credentials_ready(account):
+    """Skip enabled YouTube channels that cannot authenticate this run.
+
+    YT-TREND / YT-TRENDJEWEL have dedicated credential keys with no GitHub
+    secret. Selecting them burned the YouTube budget before YT-CD
+    (@colourdiamondss) could upload. Leave those rows enabled; do not consume
+    a YouTube slot until the per-account token exists.
+    """
+    dedicated = str(account.get("credential_property_key", "") or "").strip()
+    account_id = account.get("account_id", "")
+    if dedicated and not (os.getenv(dedicated) or "").strip():
+        main.logger.warning(
+            "YouTube account %s has no %s; leaving enabled and skipping this run",
+            account_id, dedicated,
+        )
+        return False
+    if dedicated == "YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS":
+        client_id = os.getenv("YOUTUBE_CLIENT_ID_COLOURDIAMONDSS", "").strip()
+        client_secret = os.getenv("YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS", "").strip()
+        if not client_id or not client_secret:
+            main.logger.warning(
+                "YouTube account %s is missing dedicated ColourDiamondss client credentials; skipping this run",
+                account_id,
+            )
+            return False
+    return True
+
+
 def _account_publish_ready(account):
     """Return False for an active destination that cannot publish yet.
 
     Blank Instagram IDs remain enabled and are probed every production run. If
     Meta can resolve the linked professional account, use it immediately;
     otherwise skip it without consuming one of the limited Instagram slots.
+    Missing YouTube OAuth secrets are skipped the same way so they cannot
+    burn YT-CD slots.
     """
-    if account.get("platform") == "tiktok":
+    platform = str(account.get("platform", "") or "").strip().lower()
+    if platform == "tiktok":
         return bool(account.get("platform_account_id") and (
             os.getenv(account.get("credential_property_key", "")) or os.getenv("ZERNIO_API_KEY")))
-    if account.get("platform") != "instagram" or account.get("platform_account_id"):
+    if platform == "youtube":
+        return _youtube_credentials_ready(account)
+    if platform != "instagram" or account.get("platform_account_id"):
         return True
 
     token = Config.get_token(account.get("credential_property_key", ""))

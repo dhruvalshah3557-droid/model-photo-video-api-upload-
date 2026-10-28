@@ -1380,6 +1380,112 @@ class FullRepairTests(unittest.TestCase):
             {"YT-JIYA"},
         )
 
+    def test_missing_youtube_token_does_not_consume_colourdiamondss_slots(self):
+        jobs = [
+            {
+                "job_id": "9-YT-TREND-model_video-0",
+                "account_id": "YT-TREND",
+                "platform": "youtube",
+                "sku": "9",
+                "media_selection": "model_video:0",
+                "format": "video",
+                "row": 1,
+                "attempts": 0,
+                "notes": "",
+                "error_message": "",
+            },
+            {
+                "job_id": "9-YT-TRENDJEWEL-model_video-0",
+                "account_id": "YT-TRENDJEWEL",
+                "platform": "youtube",
+                "sku": "9",
+                "media_selection": "model_video:0",
+                "format": "video",
+                "row": 2,
+                "attempts": 1,
+                "notes": "",
+                "error_message": "No YouTube OAuth refresh token configured for YOUTUBE_OAUTH_REFRESH_TOKEN_TRENDINGJEWELS",
+                "last_attempt_at": "2026-10-28T02:34:37Z",
+            },
+            {
+                "job_id": "2056-YT-CD-model_video-0",
+                "account_id": "YT-CD",
+                "platform": "youtube",
+                "sku": "2056",
+                "media_selection": "model_video:0",
+                "format": "video",
+                "row": 3,
+                "attempts": 0,
+                "notes": "",
+                "error_message": "",
+            },
+            {
+                "job_id": "2281-YT-CD-model_video-0",
+                "account_id": "YT-CD",
+                "platform": "youtube",
+                "sku": "2281",
+                "media_selection": "model_video:0",
+                "format": "video",
+                "row": 4,
+                "attempts": 0,
+                "notes": "",
+                "error_message": "",
+            },
+        ]
+        accounts = {
+            "YT-TREND": {
+                "enabled": True,
+                "platform": "youtube",
+                "platform_account_id": "UCtrend",
+                "timezone": "Asia/Bangkok",
+                "credential_property_key": "YOUTUBE_OAUTH_REFRESH_TOKEN_TREND",
+            },
+            "YT-TRENDJEWEL": {
+                "enabled": True,
+                "platform": "youtube",
+                "platform_account_id": "UCtrendjewel",
+                "timezone": "Asia/Bangkok",
+                "credential_property_key": "YOUTUBE_OAUTH_REFRESH_TOKEN_TRENDINGJEWELS",
+            },
+            "YT-CD": {
+                "enabled": True,
+                "platform": "youtube",
+                "platform_account_id": "UCTWbcY-YtvAx2QUZKXt230A",
+                "timezone": "Asia/Bangkok",
+                "credential_property_key": "YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS",
+            },
+        }
+        sources = {
+            "9": {"sku": "9", "model_videos": ["https://media.example/trend.mp4"]},
+            "2056": {"sku": "2056", "model_videos": ["https://media.example/cd0.mp4"]},
+            "2281": {"sku": "2281", "model_videos": ["https://media.example/cd1.mp4"]},
+        }
+        sheets = types.SimpleNamespace(update_job=lambda *args, **kwargs: None)
+        env = {
+            "YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS": "cd-refresh",
+            "YOUTUBE_CLIENT_ID_COLOURDIAMONDSS": "cd-client",
+            "YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS": "cd-secret",
+            "YOUTUBE_OAUTH_REFRESH_TOKEN_TREND": "",
+            "YOUTUBE_OAUTH_REFRESH_TOKEN_TRENDINGJEWELS": "",
+        }
+        with patch.dict("os.environ", env, clear=False), \
+             patch("optimized_runner._platform_limits", return_value={"facebook": 0, "instagram": 0, "youtube": 2, "line": 0}), \
+             patch("optimized_runner._local_slot_due", return_value=True), \
+             patch("optimized_runner._rotation_rank", return_value=0), \
+             patch("optimized_runner._is_clean_source", return_value=(True, "")), \
+             patch("optimized_runner.resolve_media_fixed", side_effect=lambda job, source: source.get("model_videos") or []), \
+             patch("optimized_runner._dns_resolves", return_value=True), \
+             patch("optimized_runner.main._classify_media_url", return_value="video"), \
+             patch("optimized_runner._video_validation_reason", return_value=""):
+            selected = optimized_runner._healthy_candidates(
+                jobs, accounts, sources, sheets, limit=2,
+            )
+            self.assertFalse(optimized_runner._account_publish_ready(accounts["YT-TREND"]))
+            self.assertFalse(optimized_runner._account_publish_ready(accounts["YT-TRENDJEWEL"]))
+            self.assertTrue(optimized_runner._account_publish_ready(accounts["YT-CD"]))
+        self.assertEqual([job["account_id"] for job in selected], ["YT-CD", "YT-CD"])
+        self.assertTrue(optimized_runner._known_unusable_pending(jobs[1]))
+
     def test_stale_youtube_oauth_error_does_not_quarantine_channel(self):
         now = datetime(2026, 9, 29, 14, 0, tzinfo=timezone.utc)
         jobs = [{
