@@ -120,5 +120,71 @@ class FacebookReelsTests(unittest.TestCase):
         )
 
 
+class FacebookPageTokenTests(unittest.TestCase):
+    def setUp(self):
+        import facebook_uploader
+        facebook_uploader._PAGE_TOKEN_CACHE.clear()
+
+    def test_direct_page_lookup_returns_page_token(self):
+        with mock.patch(
+            "facebook_uploader.requests.get",
+            return_value=_Response({"access_token": "page-scoped-token"}),
+        ) as get:
+            resolved = FacebookUploader._resolve_page_token("106169348108583", "user-token")
+        self.assertEqual(resolved, "page-scoped-token")
+        self.assertTrue(get.call_args.args[0].endswith("/106169348108583"))
+
+    def test_accounts_fallback_finds_page_token(self):
+        responses = [
+            _Response({"error": {"message": "Unsupported get request"}}),
+            _Response({
+                "data": [
+                    {"id": "111", "access_token": "other-page"},
+                    {"id": "106169348108583", "access_token": "bkk-page-token"},
+                ]
+            }),
+        ]
+        with mock.patch(
+            "facebook_uploader.requests.get",
+            side_effect=responses,
+        ) as get:
+            resolved = FacebookUploader._resolve_page_token("106169348108583", "user-token")
+        self.assertEqual(resolved, "bkk-page-token")
+        self.assertTrue(get.call_args_list[1].args[0].endswith("/me/accounts"))
+
+    def test_missing_page_token_raises_permission_error(self):
+        responses = [
+            _Response({"error": {"message": "Unsupported get request"}}),
+            _Response({"data": [{"id": "111", "access_token": "other-page"}]}),
+        ]
+        with mock.patch(
+            "facebook_uploader.requests.get",
+            side_effect=responses,
+        ):
+            with self.assertRaises(Exception) as raised:
+                FacebookUploader._resolve_page_token("106169348108583", "user-token")
+        message = str(raised.exception)
+        self.assertIn("could not resolve a page-scoped access token", message)
+        self.assertIn("106169348108583", message)
+
+    def test_accounts_pagination_finds_later_page(self):
+        responses = [
+            _Response({}),
+            _Response({
+                "data": [{"id": "111", "access_token": "other-page"}],
+                "paging": {"next": "https://graph.facebook.com/v26.0/me/accounts?after=cursor"},
+            }),
+            _Response({
+                "data": [{"id": "106169348108583", "access_token": "bkk-page-token"}],
+            }),
+        ]
+        with mock.patch(
+            "facebook_uploader.requests.get",
+            side_effect=responses,
+        ):
+            resolved = FacebookUploader._resolve_page_token("106169348108583", "user-token")
+        self.assertEqual(resolved, "bkk-page-token")
+
+
 if __name__ == "__main__":
     unittest.main()
