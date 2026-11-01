@@ -277,6 +277,26 @@ def test_generate_queues_model_media_only():
     print("OK test_generate_queues_model_media_only")
 
 
+def test_generate_groups_model_photos_into_one_carousel():
+    accounts = [_account()]
+    source = _source("100")
+    source["model_images"] = [
+        "http://example.com/100_model1.jpg",
+        "http://example.com/100_model2.jpg",
+        "http://example.com/100_model3.jpg",
+    ]
+    fake = FakeSheets({"100": source}, accounts, [])
+    with patch.object(Config, "MAX_GENERATE_JOBS", 10):
+        main.run_generate(fake)
+    photo_jobs = [job for job in fake.appended_jobs if str(job["media_selection"]).startswith("model_photo:")]
+    assert len(photo_jobs) == 1, photo_jobs
+    assert photo_jobs[0]["media_selection"] == "model_photo:0"
+    assert photo_jobs[0]["format"] == "carousel"
+    media = main.resolve_media(photo_jobs[0], source)
+    assert media == source["model_images"], media
+    print("OK test_generate_groups_model_photos_into_one_carousel")
+
+
 def test_round_robin_prefers_model_media_within_platform():
     jobs = [
         {"job_id": "fb-carousel", "platform": "facebook", "media_selection": "carousel", "attempts": 0, "row": 1},
@@ -593,6 +613,21 @@ def test_resolve_ig_user_id_handles_linked_and_unlinked_pages():
         except IGAccountNotLinkedError:
             pass
     print("OK test_resolve_ig_user_id_handles_linked_and_unlinked_pages")
+
+def test_model_photo_carousel_collapses_jewellery_and_canonical_duplicates():
+    urls = [
+        "https://colourdiam.com/Product/Jewellery/Model%20images/298/1.jpeg",
+        "https://colourdiam.com/Product/Model%20Photo%20Video/298/1.jpeg",
+        "https://colourdiam.com/Product/Jewellery/Model%20images/298/2.jpeg",
+        "https://colourdiam.com/Product/Model%20Photo%20Video/298/2.jpeg",
+    ]
+    collapsed = main._collapse_duplicate_images(urls)
+    assert collapsed == [
+        "https://colourdiam.com/Product/Jewellery/Model%20images/298/1.jpeg",
+        "https://colourdiam.com/Product/Jewellery/Model%20images/298/2.jpeg",
+    ], collapsed
+    print("OK test_model_photo_carousel_collapses_jewellery_and_canonical_duplicates")
+
 
 def test_filter_valid_media_drops_dead_links():
     good = "https://colourdiam.com/Product/Jewellery/2518/white45/2518_1.jpg"
@@ -1127,6 +1162,7 @@ def test_ffprobe_timeout_is_not_broken_media():
 
 if __name__ == "__main__":
     test_generate_queues_model_media_only()
+    test_generate_groups_model_photos_into_one_carousel()
     test_round_robin_prefers_model_media_within_platform()
     test_generate_is_idempotent()
     test_generate_uses_stable_job_id_when_mutable_key_drifted()
@@ -1139,6 +1175,7 @@ if __name__ == "__main__":
     test_publish_new_platforms_routing()
     test_round_robin_jobs_mix_platforms()
     test_resolve_ig_user_id_handles_linked_and_unlinked_pages()
+    test_model_photo_carousel_collapses_jewellery_and_canonical_duplicates()
     test_filter_valid_media_drops_dead_links()
     test_optimized_preflight_skips_corrupt_video_and_uses_next_job()
     test_video_preflight_result_is_cached_across_accounts()

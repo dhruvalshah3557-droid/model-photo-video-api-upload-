@@ -110,6 +110,8 @@ def _youtube_auth_dead_accounts(jobs, now=None):
     One invalid_grant on YT-JIYA used to burn the only YouTube slot every run
     while @colourdiamondss (YT-CD) never got a turn. Skip the dead channel
     until its token is repaired; older historical errors do not quarantine.
+    Channels with no refresh token, including @trendingjewels (YT-TREND),
+    are skipped the same way.
     """
     now = now or datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=YOUTUBE_AUTH_DEAD_HOURS)

@@ -69,6 +69,17 @@ class DeliveryPolicyTests(unittest.TestCase):
         self.assertTrue(delivery_policy.slot_eligible(_primary("FB-CD", "facebook")))
         self.assertTrue(delivery_policy.slot_eligible(_primary("IG-CD", "instagram")))
         self.assertTrue(delivery_policy.slot_eligible(_primary("YT-CD", "youtube")))
+        self.assertTrue(delivery_policy.slot_eligible(_primary("YT-TREND", "youtube")))
+        trend = {
+            "account_id": "YT-TREND",
+            "platform": "youtube",
+            "enabled": True,
+            "platform_account_id": "UCWSGpmJfBIzcA9O9kFWaRNw",
+            "credential_property_key": "YOUTUBE_OAUTH_REFRESH_TOKEN_TRENDINGJEWELS",
+        }
+        self.assertFalse(delivery_policy.slot_eligible(trend))
+        with patch.dict("os.environ", {"YOUTUBE_OAUTH_REFRESH_TOKEN_TRENDINGJEWELS": "token"}):
+            self.assertTrue(delivery_policy.slot_eligible(trend))
         self.assertFalse(delivery_policy.slot_eligible(_primary(
             "IG-SWEDEN", "instagram", platform_account_id="",
         )))

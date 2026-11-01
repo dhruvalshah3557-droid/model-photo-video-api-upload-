@@ -225,6 +225,27 @@ def _dedupe_media(urls):
     return ordered
 
 
+def _image_filename(url):
+    path = str(url or "").split("?", 1)[0].rstrip("/")
+    return path.rsplit("/", 1)[-1].lower() if path else ""
+
+
+def _collapse_duplicate_images(urls):
+    """Keep one URL per filename so jewellery/canonical pairs are not duplicate slides."""
+    ordered = []
+    seen = set()
+    for url in urls or []:
+        url = str(url or "").strip()
+        if not url:
+            continue
+        key = _image_filename(url) or url
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(url)
+    return ordered
+
+
 def job_unique_key(job):
     """Unique key for a queue job: SKU + account + platform + format + media type.
 
@@ -250,11 +271,12 @@ def _lang_code(primary_language):
 def resolve_media(job, source):
     """Resolve ordered media URLs for one queue job.
 
-    Carousels are image-only and ordered as:
+    Product carousels are image-only and ordered as:
       1) main product image
       2) certificate image on Instagram (when a public image URL is supplied)
       3) remaining product images
-    Instagram accepts up to 10 carousel children, so its list is capped at 10.
+    Model photo jobs include every model image as one carousel. Instagram
+    accepts up to 10 carousel children, so its list is capped at 10.
     Product/model videos always remain separate video/Reel jobs.
     """
     selection = job.get("media_selection", "")
@@ -292,12 +314,13 @@ def resolve_media(job, source):
     if selection == "product_video":
         return [source["video_url"]] if source["video_url"] else []
     if selection.startswith("model_photo:"):
-        try:
-            idx = int(selection.split(":", 1)[1])
-            photos = source.get("model_images", [])
-            return [photos[idx]] if 0 <= idx < len(photos) else []
-        except (ValueError, IndexError):
-            return []
+        photos = [
+            url for url in (source.get("model_images") or [])
+            if str(url or "").strip()
+        ]
+        if job.get("platform", "").lower() == "instagram":
+            return _dedupe_media(photos)[:10]
+        return _dedupe_media(photos)
     if selection.startswith("model_video:"):
         try:
             idx = int(selection.split(":", 1)[1])
@@ -793,6 +816,13 @@ def publish_job(job, source, account):
     media = _filter_valid_media(media)
     if not media:
         raise Exception("All resolved media URLs are unavailable (404/dead links); nothing to publish")
+
+    if str(job.get("media_selection", "") or "").startswith("model_photo:"):
+        media = _collapse_duplicate_images(media)
+        if platform == "instagram":
+            media = media[:10]
+        if not media:
+            raise Exception("All resolved media URLs are unavailable (404/dead links); nothing to publish")
 
     media = _probe_job_media(job, media)
     if not media:

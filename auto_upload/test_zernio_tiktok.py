@@ -50,10 +50,11 @@ class TikTokTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.u.creator_info('video')
 
     def test_generates_photos_and_videos(self):
-        source={'images':['https://cdn.test/a.jpg'],'video_url':'https://cdn.test/a.mp4','model_videos':['https://cdn.test/m.mp4'],'model_images':['https://cdn.test/m.jpg']}
+        source={'images':['https://cdn.test/a.jpg'],'video_url':'https://cdn.test/a.mp4','model_videos':['https://cdn.test/m.mp4'],'model_images':['https://cdn.test/m.jpg','https://cdn.test/m2.jpg']}
         jobs=generate_jobs({'1':source},[{'enabled':True,'platform':'tiktok','account_id':'TIKTOK-CD','platform_account_id':'6aae50288d284ffb211a67e9'}])
         self.assertEqual({j['media_selection'] for j in jobs},{'model_video:0','model_photo:0'})
         self.assertEqual({j['format'] for j in jobs},{'carousel','video'})
+        self.assertEqual(sum(1 for j in jobs if j['media_selection']=='model_photo:0'), 1)
 
     def test_scheduler_reserves_tiktok_slot(self):
         accounts={'TIKTOK-CD':{'enabled':True,'platform':'tiktok','platform_account_id':'a'}}

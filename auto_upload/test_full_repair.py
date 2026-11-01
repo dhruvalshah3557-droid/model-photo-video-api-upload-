@@ -51,23 +51,64 @@ from job_generator import is_model_media
 class FullRepairTests(unittest.TestCase):
     def test_model_photo_is_resolved_as_independent_upload(self):
         source = {
+            "sku": "298",
             "model_images": [
                 "https://colourdiam.com/Product/Model%20Photo%20Video/298/1.jpeg",
                 "https://colourdiam.com/Product/Model%20Photo%20Video/298/2.jpeg",
             ]
         }
         media = optimized_runner.resolve_media_fixed(
-            {"platform": "facebook", "media_selection": "model_photo:1"},
+            {"platform": "facebook", "media_selection": "model_photo:0", "sku": "298"},
             source,
         )
         self.assertEqual(
             media[0],
+            "https://colourdiam.com/Product/Jewellery/Model%20images/298/1.jpeg",
+        )
+        self.assertIn(
             "https://colourdiam.com/Product/Jewellery/Model%20images/298/2.jpeg",
+            media,
+        )
+        self.assertIn(
+            "https://colourdiam.com/Product/Model%20Photo%20Video/298/1.jpeg",
+            media,
         )
         self.assertIn(
             "https://colourdiam.com/Product/Model%20Photo%20Video/298/2.jpeg",
             media,
         )
+        leftover = optimized_runner.resolve_media_fixed(
+            {"platform": "facebook", "media_selection": "model_photo:1", "sku": "298"},
+            source,
+        )
+        self.assertEqual(leftover[0], media[0])
+        self.assertIn(
+            "https://colourdiam.com/Product/Jewellery/Model%20images/298/2.jpeg",
+            leftover,
+        )
+
+    def test_generate_queues_one_model_photo_carousel_per_account(self):
+        from job_generator import generate_jobs
+
+        source = {
+            "sku": "100",
+            "lab": "GIA",
+            "source_status": "ok",
+            "model_videos": ["https://cdn.test/100.mp4"],
+            "model_images": [
+                "https://cdn.test/100_1.jpg",
+                "https://cdn.test/100_2.jpg",
+                "https://cdn.test/100_3.jpg",
+            ],
+        }
+        jobs = generate_jobs(
+            {"100": source},
+            [{"enabled": True, "platform": "facebook", "account_id": "FB-CD", "platform_account_id": "1"}],
+        )
+        photo_jobs = [job for job in jobs if str(job["media_selection"]).startswith("model_photo:")]
+        self.assertEqual(len(photo_jobs), 1)
+        self.assertEqual(photo_jobs[0]["media_selection"], "model_photo:0")
+        self.assertEqual(photo_jobs[0]["format"], "carousel")
 
     def test_model_media_is_preferred_over_product_carousel(self):
         jobs = [
@@ -1301,6 +1342,87 @@ class FullRepairTests(unittest.TestCase):
         self.assertEqual(revived, 1)
         self.assertEqual(updates[0][1]["status"], "pending")
         self.assertIn("byte-upload", updates[0][1]["notes"])
+
+    def test_trendingjewels_youtube_account_is_wired(self):
+        from enable_youtube_accounts import ACCOUNTS
+
+        trend = next(spec for spec in ACCOUNTS if spec["account_id"] == "YT-TREND")
+        self.assertEqual(trend["new_row"]["username_or_channel"], "trendingjewels")
+        self.assertEqual(trend["new_row"]["platform_account_id"], "UCWSGpmJfBIzcA9O9kFWaRNw")
+        self.assertEqual(
+            trend["new_row"]["credential_property_key"],
+            "YOUTUBE_OAUTH_REFRESH_TOKEN_TRENDINGJEWELS",
+        )
+        self.assertEqual(trend["new_row"]["enabled"], "Yes")
+
+    def test_youtube_without_refresh_token_does_not_consume_slot(self):
+        jobs = [
+            {
+                "job_id": "1-YT-TREND-model_video-0",
+                "account_id": "YT-TREND",
+                "platform": "youtube",
+                "sku": "1",
+                "media_selection": "model_video:0",
+                "format": "video",
+                "row": 1,
+                "attempts": 0,
+                "notes": "",
+                "error_message": "",
+            },
+            {
+                "job_id": "1-YT-CD-model_video-0",
+                "account_id": "YT-CD",
+                "platform": "youtube",
+                "sku": "1",
+                "media_selection": "model_video:0",
+                "format": "video",
+                "row": 2,
+                "attempts": 0,
+                "notes": "",
+                "error_message": "",
+            },
+        ]
+        accounts = {
+            "YT-TREND": {
+                "account_id": "YT-TREND",
+                "enabled": True,
+                "platform": "youtube",
+                "platform_account_id": "UCWSGpmJfBIzcA9O9kFWaRNw",
+                "credential_property_key": "YOUTUBE_OAUTH_REFRESH_TOKEN_TRENDINGJEWELS",
+                "timezone": "Asia/Bangkok",
+            },
+            "YT-CD": {
+                "account_id": "YT-CD",
+                "enabled": True,
+                "platform": "youtube",
+                "platform_account_id": "UCTWbcY-YtvAx2QUZKXt230A",
+                "credential_property_key": "YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS",
+                "timezone": "Asia/Bangkok",
+            },
+        }
+        sources = {"1": {"sku": "1", "model_videos": ["https://media.example/model.mp4"]}}
+        sheets = types.SimpleNamespace(update_job=lambda *args, **kwargs: None)
+        env = {
+            "YOUTUBE_OAUTH_REFRESH_TOKEN_COLOURDIAMONDSS": "cd-token",
+            "YOUTUBE_CLIENT_ID_COLOURDIAMONDSS": "cd-client",
+            "YOUTUBE_CLIENT_SECRET_COLOURDIAMONDSS": "cd-secret",
+            "YOUTUBE_OAUTH_REFRESH_TOKEN_TRENDINGJEWELS": "",
+        }
+        with patch.dict("os.environ", env, clear=False), \
+             patch("optimized_runner._platform_limits", return_value={"facebook": 0, "instagram": 0, "youtube": 1, "line": 0}), \
+             patch("optimized_runner._local_slot_due", return_value=True), \
+             patch("optimized_runner._rotation_rank", return_value=0), \
+             patch("optimized_runner._is_clean_source", return_value=(True, "")), \
+             patch("optimized_runner.resolve_media_fixed", return_value=["https://media.example/model.mp4"]), \
+             patch("optimized_runner._dns_resolves", return_value=True), \
+             patch("optimized_runner.main._classify_media_url", return_value="video"), \
+             patch("optimized_runner._video_validation_reason", return_value=""):
+            self.assertFalse(optimized_runner._account_publish_ready(accounts["YT-TREND"]))
+            self.assertTrue(optimized_runner._account_publish_ready(accounts["YT-CD"]))
+            selected = optimized_runner._healthy_candidates(
+                jobs, accounts, sources, sheets, limit=1,
+            )
+        self.assertEqual([job["account_id"] for job in selected], ["YT-CD"])
 
     def test_recent_youtube_oauth_failure_does_not_block_other_channel(self):
         now = datetime(2026, 9, 29, 14, 0, tzinfo=timezone.utc)

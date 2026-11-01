@@ -85,6 +85,8 @@ ACCOUNTS = (
         "account_id": "YT-TREND",
         "updates": {
             "enabled": "Yes",
+            "platform_account_id": "UCWSGpmJfBIzcA9O9kFWaRNw",
+            "username_or_channel": "trendingjewels",
             "credential_property_key": "YOUTUBE_OAUTH_REFRESH_TOKEN_TRENDINGJEWELS",
             "approval_required": "No",
             "notes": (

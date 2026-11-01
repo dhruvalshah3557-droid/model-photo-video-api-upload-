@@ -31,7 +31,7 @@ def _env(key, default=""):
 
 
 def token_cache_path(client_id="", refresh_token=""):
-    """Keep ColourDiamondss and JIYA OAuth pickles from overwriting each other."""
+    """Keep ColourDiamondss, JIYA and Trendingjewels OAuth pickles from overwriting each other."""
     client_id = (client_id or "").strip()
     refresh_token = (refresh_token or "").strip()
     if not client_id and not refresh_token:

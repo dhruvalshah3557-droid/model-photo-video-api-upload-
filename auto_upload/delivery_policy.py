@@ -7,6 +7,7 @@ burst in a single run. LINE is excluded from capacity while its monthly
 Messaging API quota is exhausted.
 """
 from datetime import datetime, timedelta, timezone
+import os
 import re
 
 PRIMARY_PLATFORMS = ("instagram", "facebook", "youtube", "tiktok")
@@ -72,6 +73,10 @@ def slot_eligible(account):
         return False
     if platform in ("instagram", "tiktok") and not str(account.get("platform_account_id") or "").strip():
         return False
+    if platform == "youtube":
+        yt_key = str(account.get("credential_property_key", "") or "").strip()
+        if yt_key and not os.getenv(yt_key):
+            return False
     return True
 
 

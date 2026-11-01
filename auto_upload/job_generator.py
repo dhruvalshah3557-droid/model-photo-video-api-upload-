@@ -72,7 +72,8 @@ def _model_job_media_matches(job, source):
     if selection.startswith("model_video:"):
         return _video_url_matches_sku(source, _indexed_source_url(source, "model_videos", selection))
     if selection.startswith("model_photo:"):
-        return _video_url_matches_sku(source, _indexed_source_url(source, "model_images", selection))
+        photos = list((source or {}).get("model_images") or [])
+        return any(_video_url_matches_sku(source, url) for url in photos)
     return False
 
 
@@ -142,9 +143,8 @@ def _append_model_jobs(jobs, sku, account_id, platform, account, source, photos=
     if videos:
         for i in range(len(source.get("model_videos", []))):
             jobs.append(_make_job(sku, account_id, platform, "video", f"model_video:{i}", account))
-    if photos:
-        for i in range(len(source.get("model_images", []))):
-            jobs.append(_make_job(sku, account_id, platform, "carousel", f"model_photo:{i}", account))
+    if photos and source.get("model_images"):
+        jobs.append(_make_job(sku, account_id, platform, "carousel", "model_photo:0", account))
 
 
 def _make_review_job(sku, account, reason):
@@ -176,11 +176,12 @@ def _make_review_job(sku, account, reason):
 def generate_jobs(sources, accounts):
     """Build model photo/video jobs from clean Source Import rows.
 
-    This repo only publishes model video and model photo. Product Reels and
-    product carousels are never queued. Unclean rows (NON CERTIFIED, API
-    error) are blocked from auto-publish and surfaced as a needs_review
-    queue entry. Product-image SKU mismatches still allow model photo/video
-    jobs when that media URL belongs to the same SKU.
+    This repo only publishes model video and model photo. Each model video
+    is its own job; all model photos for a SKU become one carousel job.
+    Product Reels and product carousels are never queued. Unclean rows
+    (NON CERTIFIED, API error) are blocked from auto-publish and surfaced
+    as a needs_review queue entry. Product-image SKU mismatches still allow
+    model photo/video jobs when that media URL belongs to the same SKU.
     """
     jobs = []
     for sku, source in sources.items():
@@ -221,12 +222,14 @@ def generate_jobs(sources, accounts):
                                 sku, account_id, platform, "video",
                                 f"model_video:{i}", account,
                             ))
-                    for i, url in enumerate(source.get("model_images") or []):
-                        if _video_url_matches_sku(source, url):
-                            jobs.append(_make_job(
-                                sku, account_id, platform, "carousel",
-                                f"model_photo:{i}", account,
-                            ))
+                    if any(
+                        _video_url_matches_sku(source, url)
+                        for url in (source.get("model_images") or [])
+                    ):
+                        jobs.append(_make_job(
+                            sku, account_id, platform, "carousel",
+                            "model_photo:0", account,
+                        ))
                 elif platform in ("youtube", "twitch"):
                     for i, url in enumerate(source.get("model_videos") or []):
                         if _video_url_matches_sku(source, url):
