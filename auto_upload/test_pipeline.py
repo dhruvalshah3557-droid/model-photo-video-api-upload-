@@ -1180,6 +1180,81 @@ def test_ftp_main_folder_list_prefers_model_photo_video():
     print("OK test_ftp_main_folder_list_prefers_model_photo_video")
 
 
+def test_ftp_lists_mp4_and_mov_videos_matched_to_sheet_stock_id():
+    from ftp_media import list_model_media, merge_ftp_model_media
+    from job_generator import generate_jobs
+    from media_prep import media_kind
+
+    class FakeFTP:
+        def cwd(self, path):
+            return None
+
+        def nlst(self, path="."):
+            if path in (".", ""):
+                return ["298", "416.0", "298.mov", "416_model.mp4", "notes.txt"]
+            if path == "298":
+                return ["298/video.mp4", "298/VIDEO.MOV", "298/1.jpeg"]
+            if path == "416.0":
+                return ["416.0/clip.mov"]
+            return []
+
+    listing = list_model_media(
+        skus=["298", "416"],
+        client=FakeFTP(),
+        config={
+            "host": "ftp.example",
+            "user": "user",
+            "password": "pass",
+            "directories": ["Product/Model Photo Video"],
+            "public_bases": ["https://colourdiam.com/Product/Model%20Photo%20Video/"],
+        },
+    )
+    assert listing["298"]["videos"] == [
+        "https://colourdiam.com/Product/Model%20Photo%20Video/298/video.mp4",
+        "https://colourdiam.com/Product/Model%20Photo%20Video/298/VIDEO.MOV",
+        "https://colourdiam.com/Product/Model%20Photo%20Video/298.mov",
+    ]
+    assert listing["298"]["images"] == [
+        "https://colourdiam.com/Product/Model%20Photo%20Video/298/1.jpeg",
+    ]
+    assert listing["416"]["videos"] == [
+        "https://colourdiam.com/Product/Model%20Photo%20Video/416.0/clip.mov",
+        "https://colourdiam.com/Product/Model%20Photo%20Video/416_model.mp4",
+    ]
+    assert media_kind(listing["298"]["videos"][0]) == "video"
+    assert media_kind(listing["298"]["videos"][1]) == "video"
+
+    sources = {
+        "298": {
+            "sku": "298",
+            "lab": "",
+            "source_status": "",
+            "integrity_error": "",
+            "model_images": [],
+            "model_videos": [],
+        },
+        "416": {
+            "sku": "416",
+            "lab": "",
+            "source_status": "",
+            "integrity_error": "",
+            "model_images": [],
+            "model_videos": [],
+        },
+    }
+    merge_ftp_model_media(sources, listing)
+    assert sources["298"]["model_videos"] == listing["298"]["videos"]
+    assert sources["416"]["model_videos"] == listing["416"]["videos"]
+
+    jobs = generate_jobs(sources, [_account("FB-CD", "facebook")])
+    selections = sorted(job["media_selection"] for job in jobs if job["sku"] == "298")
+    assert selections == ["model_photo:0", "model_video:0", "model_video:1", "model_video:2"]
+    assert sorted(
+        job["media_selection"] for job in jobs if job["sku"] == "416"
+    ) == ["model_video:0", "model_video:1"]
+    print("OK test_ftp_lists_mp4_and_mov_videos_matched_to_sheet_stock_id")
+
+
 def test_youtube_jobs_are_queued_when_only_product_images_mismatch():
     from job_generator import generate_jobs, _is_clean_source
 
@@ -1277,6 +1352,7 @@ if __name__ == "__main__":
     test_model_photo_video_404s_fall_back_to_jewellery_model_images()
     test_ftp_listing_maps_files_to_public_https_urls()
     test_ftp_main_folder_list_prefers_model_photo_video()
+    test_ftp_lists_mp4_and_mov_videos_matched_to_sheet_stock_id()
     test_youtube_jobs_are_queued_when_only_product_images_mismatch()
     test_dns_and_integrity_preflight_failures_are_retried()
     test_ffprobe_timeout_is_not_broken_media()

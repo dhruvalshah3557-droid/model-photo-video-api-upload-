@@ -19,6 +19,14 @@ VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
 _LISTING_CACHE = None
 
 
+def normalize_sku(value):
+    """Match FTP folders/files to Source Import STK (298.0 -> 298)."""
+    text = str(value or "").strip()
+    if text.endswith(".0") and text[:-2].isdigit():
+        return text[:-2]
+    return text
+
+
 def _split_csv(value):
     text = str(value or "").strip()
     if not text:
@@ -56,6 +64,14 @@ def public_url(base, sku, filename):
     return root + sku_path + "/" + file_path
 
 
+def public_file_url(base, filename):
+    root = str(base or DEFAULT_PUBLIC_BASES[0]).rstrip("/") + "/"
+    file_path = quote(unquote(str(filename or "").strip()), safe="._-")
+    if not file_path:
+        return ""
+    return root + file_path
+
+
 def _basename(name):
     text = unquote(str(name or "").replace("\\", "/").rstrip("/"))
     if "/" in text:
@@ -68,6 +84,50 @@ def _ext(name):
     if "." not in text:
         return ""
     return "." + text.rsplit(".", 1)[-1]
+
+
+def _stem(name):
+    filename = _basename(name)
+    ext = _ext(filename)
+    if not ext:
+        return filename.strip()
+    return filename[: len(filename) - len(ext)].strip()
+
+
+def _is_media_file(name):
+    return _ext(name) in VIDEO_EXTS or _ext(name) in IMAGE_EXTS
+
+
+def _add_media(bucket, filename, url):
+    if not bucket or not url or url in bucket["images"] + bucket["videos"]:
+        return False
+    ext = _ext(filename)
+    if ext in VIDEO_EXTS:
+        bucket["videos"].append(url)
+        return True
+    if ext in IMAGE_EXTS:
+        bucket["images"].append(url)
+        return True
+    return False
+
+
+def _wanted_keys(wanted):
+    return {normalize_sku(sku) for sku in (wanted or ()) if str(sku).strip()}
+
+
+def _sku_from_filename(filename, wanted):
+    stem = normalize_sku(_stem(filename))
+    if not stem:
+        return ""
+    keys = _wanted_keys(wanted)
+    if stem in keys:
+        return stem
+    for sku in keys:
+        if stem.startswith(sku + "_") or stem.startswith(sku + "-"):
+            return sku
+    if keys:
+        return ""
+    return stem
 
 
 def _connect(cfg, factory=None):
@@ -102,29 +162,33 @@ def _list_one_directory(ftp, root, public_base, wanted):
             logger.warning("FTP model-media directory unavailable (%s): %s", root, exc)
             return {}
     entries = [_basename(name) for name in _nlst(ftp, ".")]
-    sku_dirs = [name for name in entries if name and name not in (".", "..")]
-    if wanted:
-        sku_dirs = [name for name in sku_dirs if name in wanted]
+    wanted_keys = _wanted_keys(wanted)
     listing = {}
-    for sku in sku_dirs:
-        images = []
-        videos = []
-        seen = set()
-        for raw in _nlst(ftp, sku):
+    for name in entries:
+        if not name or name in (".", ".."):
+            continue
+        if _is_media_file(name):
+            sku = _sku_from_filename(name, wanted_keys)
+            if not sku:
+                continue
+            url = public_file_url(public_base, name)
+            bucket = listing.setdefault(sku, {"images": [], "videos": []})
+            _add_media(bucket, name, url)
+            if not bucket["images"] and not bucket["videos"]:
+                listing.pop(sku, None)
+            continue
+        sku = normalize_sku(name)
+        if wanted_keys and sku not in wanted_keys and name not in wanted:
+            continue
+        bucket = listing.setdefault(sku, {"images": [], "videos": []})
+        for raw in _nlst(ftp, name):
             filename = _basename(raw)
             if not filename or filename in (".", ".."):
                 continue
-            ext = _ext(filename)
-            url = public_url(public_base, sku, filename)
-            if not url or url in seen:
-                continue
-            seen.add(url)
-            if ext in VIDEO_EXTS:
-                videos.append(url)
-            elif ext in IMAGE_EXTS:
-                images.append(url)
-        if images or videos:
-            listing[sku] = {"images": images, "videos": videos}
+            url = public_url(public_base, name, filename)
+            _add_media(bucket, filename, url)
+        if not bucket["images"] and not bucket["videos"]:
+            listing.pop(sku, None)
     return listing
 
 
@@ -158,11 +222,14 @@ def list_model_media(skus=None, client=None, config=None):
     cfg = config or ftp_config()
     if not (cfg["host"] and cfg["user"] and cfg["password"]):
         return {}
-    wanted = {str(sku).strip() for sku in (skus or ()) if str(sku).strip()}
+    wanted = {normalize_sku(sku) for sku in (skus or ()) if str(sku).strip()}
     if _LISTING_CACHE is not None and client is None:
         if not wanted:
             return _LISTING_CACHE
-        return {sku: files for sku, files in _LISTING_CACHE.items() if sku in wanted}
+        return {
+            sku: files for sku, files in _LISTING_CACHE.items()
+            if normalize_sku(sku) in wanted
+        }
 
     directories = list(cfg.get("directories") or ([cfg.get("directory")] if cfg.get("directory") else DEFAULT_FTP_DIRS))
     bases = list(cfg.get("public_bases") or ([cfg.get("public_base")] if cfg.get("public_base") else DEFAULT_PUBLIC_BASES))
@@ -195,7 +262,10 @@ def list_model_media(skus=None, client=None, config=None):
     if client is None and not wanted:
         _LISTING_CACHE = listing
     if wanted:
-        return {sku: files for sku, files in listing.items() if sku in wanted}
+        return {
+            sku: files for sku, files in listing.items()
+            if normalize_sku(sku) in wanted
+        }
     return listing
 
 
@@ -211,7 +281,12 @@ def merge_ftp_model_media(sources, listing=None):
         return sources
     replaced = 0
     for sku, source in sources.items():
-        files = listing.get(sku) or listing.get(str(sku).strip())
+        key = normalize_sku(sku)
+        files = (
+            listing.get(sku)
+            or listing.get(str(sku).strip())
+            or listing.get(key)
+        )
         if not files:
             source["model_images"] = []
             source["model_videos"] = []
