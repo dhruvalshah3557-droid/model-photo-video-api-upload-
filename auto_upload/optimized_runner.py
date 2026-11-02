@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 import time
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import urlparse
 
 import main
 from config import Config
@@ -87,9 +87,6 @@ _LIVE_MEDIA_HOSTS = (
     "www.colourdiam.com",
     "colourdiam.com",
 )
-_MODEL_PHOTO_VIDEO_PREFIX = "https://colourdiam.com/Product/Model%20Photo%20Video/"
-_JEWELLERY_MODEL_IMAGES_MARKER = "/product/jewellery/model images/"
-_VIDEO_EXTS = (".mp4", ".mov", ".avi", ".mkv", ".webm")
 _REWRITE_LOGGED = set()
 
 
@@ -141,37 +138,12 @@ def _rewrite_media_url(url):
         return raw
     host = (parsed.hostname or "").strip().lower()
     if host not in _DEAD_MEDIA_HOSTS:
-        return _model_video_folder_url(raw)
+        return raw
     rewritten = parsed._replace(netloc=_LIVE_MEDIA_HOSTS[0]).geturl()
     if host not in _REWRITE_LOGGED:
         _REWRITE_LOGGED.add(host)
         main.logger.info("Rewrote dead media host %s onto %s", host, _LIVE_MEDIA_HOSTS[0])
-    return _model_video_folder_url(rewritten)
-
-
-def _is_video_media_url(url):
-    path = unquote(urlparse(str(url or "")).path or "").lower()
-    return any(path.endswith(ext) for ext in _VIDEO_EXTS)
-
-
-def _model_video_folder_url(url):
-    """Videos use Model Photo Video only, never Jewellery/Model images."""
-    raw = str(url or "").strip()
-    if not raw or not _is_video_media_url(raw):
-        return raw
-    try:
-        parsed = urlparse(raw)
-    except Exception:
-        return raw
-    path = unquote(parsed.path or "")
-    lowered = path.lower()
-    idx = lowered.find(_JEWELLERY_MODEL_IMAGES_MARKER)
-    if idx < 0:
-        return raw
-    rest = path[idx + len(_JEWELLERY_MODEL_IMAGES_MARKER):].lstrip("/")
-    if not rest:
-        return raw
-    return _MODEL_PHOTO_VIDEO_PREFIX + quote(rest, safe="/._-")
+    return rewritten
 
 
 def _still_center_fallback(url):

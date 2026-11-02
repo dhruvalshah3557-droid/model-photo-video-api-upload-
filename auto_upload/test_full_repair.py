@@ -1180,22 +1180,21 @@ class FullRepairTests(unittest.TestCase):
         self.assertEqual(updates[0][1]["status"], "pending")
         self.assertIn("model media", updates[0][1]["notes"].lower())
 
-    def test_model_videos_stay_on_model_photo_video_folder(self):
+    def test_model_videos_stay_on_ftp_jewellery_folder(self):
         urls = optimized_runner._rewrite_media_urls(
             [
                 "https://colourdiam.com/Product/Jewellery/Model%20images/298/video.mp4",
-                "https://colourdiam.com/Product/Model%20Photo%20Video/298/1.jpeg",
+                "https://colourdiam.com/Product/Jewellery/Model%20images/298/1.jpeg",
             ],
         )
         self.assertEqual(
             urls[0],
-            "https://colourdiam.com/Product/Model%20Photo%20Video/298/video.mp4",
+            "https://colourdiam.com/Product/Jewellery/Model%20images/298/video.mp4",
         )
         self.assertEqual(
             urls[1],
-            "https://colourdiam.com/Product/Model%20Photo%20Video/298/1.jpeg",
+            "https://colourdiam.com/Product/Jewellery/Model%20images/298/1.jpeg",
         )
-        self.assertNotIn("Jewellery/Model%20images", urls[0])
 
     def test_model_media_preflight_jobs_are_revived_for_live_fallback(self):
         updates = []
@@ -1239,6 +1238,12 @@ class FullRepairTests(unittest.TestCase):
             media[0],
             "https://colourdiam.com/Product/Jewellery/Model%20images/414/video.mp4",
         )
+        ftp_url = "https://colourdiam.com/Product/Jewellery/Model%20images/414/video.mp4"
+        ftp_media = optimized_runner.resolve_media_fixed(
+            {"platform": "facebook", "media_selection": "model_video:0", "sku": "414"},
+            {"sku": "414", "model_videos": [ftp_url]},
+        )
+        self.assertEqual(ftp_media[0], ftp_url)
 
     def test_facebook_first_pass_is_one_job_per_account(self):
         jobs = []

@@ -192,15 +192,6 @@ class SheetsReader:
         self.model_media_ws = None
         self.mirror_log_ws = None
         self.mirror_log_header_row = None
-        if Config.MODEL_MEDIA_SHEET_URL:
-            try:
-                model_sheet = self.client.open_by_url(Config.MODEL_MEDIA_SHEET_URL)
-                self.model_media_ws = model_sheet.worksheet(Config.MODEL_MEDIA_SOURCE_SHEET)
-            except Exception as exc:
-                # The primary workbook must remain usable if the supplemental
-                # workbook is temporarily unavailable or has not yet been
-                # shared with the service account.
-                logger.warning("Model-media workbook unavailable: %s", exc)
         self.guide_ws = None
         self.guide_error = ""
         try:
@@ -349,6 +340,11 @@ class SheetsReader:
         return "/product/model photo video/" in path
 
     @classmethod
+    def _is_jewellery_model_images_path(cls, url):
+        path = unquote(urlparse(str(url or "")).path or "").lower()
+        return "/product/jewellery/model images/" in path
+
+    @classmethod
     def _model_media_http_fallback(cls, url, sku=None):
         raw = str(url or "").strip()
         if not raw or not cls._is_model_photo_video_path(raw):
@@ -395,9 +391,7 @@ class SheetsReader:
         host = (parsed.hostname or "").strip().lower()
         if host and not cls._is_colourdiam_host(raw):
             return raw
-        if cls._is_model_photo_video_path(raw):
-            # The FTP lookup supplies exact folder/file names, including known
-            # compound-SKU folder aliases. Preserve this authoritative URL.
+        if cls._is_model_photo_video_path(raw) or cls._is_jewellery_model_images_path(raw):
             return raw
         elif host in cls._DEAD_MODEL_HOSTS:
             name = filename or cls._model_media_filename(raw, kind)
@@ -621,16 +615,8 @@ class SheetsReader:
                     u for u in side_images
                     if u != main_image and not self._is_center(u)
                 ]
-            model_images = self._collect_model_urls(
-                rec, self.MODEL_IMAGE_HEADERS, sku, "image",
-                raw_row=raw_row, indexes=self.MODEL_IMAGE_INDEXES,
-                defaults=self.MODEL_IMAGE_DEFAULTS,
-            )
-            model_videos = self._collect_model_urls(
-                rec, self.MODEL_VIDEO_HEADERS, sku, "video",
-                raw_row=raw_row, indexes=self.MODEL_VIDEO_INDEXES,
-                defaults=self.MODEL_VIDEO_DEFAULTS,
-            )
+            model_images = []
+            model_videos = []
             certificate_media_url = self._pick(
                 rec,
                 "CERTIFICATE IMAGE LINK", "Certificate Image Link", "certificate image link",
@@ -692,56 +678,9 @@ class SheetsReader:
                 "lang_hashtags": lang_hashtags,
                 "integrity_error": "; ".join(integrity_errors),
             }
-        self._merge_model_media_rows(sources)
         from ftp_media import merge_ftp_model_media
         merge_ftp_model_media(sources)
         return sources
-
-    def _merge_model_media_rows(self, sources):
-        """Merge supplemental model media by SKU without creating new products.
-
-        The main Source Import remains authoritative for product copy, account
-        scheduling, and duplicate prevention. The dedicated workbook can add
-        model photos/videos only, so a copied queue can never publish twice.
-        """
-        if getattr(self, "model_media_ws", None) is None:
-            return
-        values = self.model_media_ws.get_all_values()
-        if not values:
-            return
-        headers = [str(value or "").strip().casefold() for value in values[0]]
-        positions = {header: idx for idx, header in enumerate(headers) if header}
-        sku_col = positions.get("sku", positions.get("stock id"))
-        if sku_col is None:
-            logger.warning("Model-media source has no SKU/Stock ID header; ignoring it")
-            return
-        photo_cols = [
-            positions[name] for name in (
-                "model image link 1", "model image link 2", "model image link 3",
-                "multiple model photo link", "model photo links",
-            ) if name in positions
-        ]
-        video_cols = [
-            positions[name] for name in (
-                "model video link 1", "model video link 2", "model video link 3",
-                "multiple model video link", "model video links",
-            ) if name in positions
-        ]
-        for row in values[1:]:
-            sku = self._normalize_sku(row[sku_col] if sku_col < len(row) else "")
-            source = sources.get(sku)
-            if not source:
-                continue
-            for col in photo_cols:
-                value = row[col] if col < len(row) else ""
-                for url in self._split_urls(value):
-                    if url not in source["model_images"]:
-                        source["model_images"].append(url)
-            for col in video_cols:
-                value = row[col] if col < len(row) else ""
-                for url in self._split_urls(value):
-                    if url not in source["model_videos"]:
-                        source["model_videos"].append(url)
 
     def get_source_row(self, sku):
         return self.get_source_rows().get(self._normalize_sku(sku))

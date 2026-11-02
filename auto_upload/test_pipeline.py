@@ -801,66 +801,73 @@ def test_source_import_duplicate_headers_do_not_abort_uploads():
         ["STK", "image1 link", "image1 link", "PRODUCT LINK"],
         ["100", "https://media.example/100/center.jpg", "duplicate", "https://example.com/100"],
     ])
-    sources = reader.get_source_rows()
+    with patch("ftp_media.list_model_media", return_value={}):
+        sources = reader.get_source_rows()
     assert "100" in sources, sources
     assert sources["100"]["main_image"] == "https://media.example/100/center.jpg"
     print("OK test_source_import_duplicate_headers_do_not_abort_uploads")
 
 
-def test_supplemental_model_media_merges_by_sku_without_new_products():
+def test_source_import_uses_ftp_model_media_not_sheet_links():
     from sheets_reader import SheetsReader
 
     reader = SheetsReader.__new__(SheetsReader)
-    reader.model_media_ws = types.SimpleNamespace(get_all_values=lambda: [
-        ["sku", "multiple model photo link", "multiple model video link"],
+    reader.SOURCE_HEADER_ROW = 1
+    reader.source_ws = types.SimpleNamespace(get_all_values=lambda: [
         [
-            "298",
-            "https://cdn.example/298/model-1.jpg\nhttps://cdn.example/298/model-2.jpg",
-            "https://cdn.example/298/model.mp4",
+            "STK", "image1 link", "FACEBOOK CAPTION",
+            "model image link 1", "model video link 1",
         ],
-        ["not-in-primary", "https://cdn.example/other.jpg", ""],
+        [
+            "416",
+            "https://media.example/416/center.jpg",
+            "Hello 416",
+            "https://colourdiam.com/Product/Model%20Photo%20Video/416/sheet.jpeg",
+            "https://colourdiam.com/Product/Model%20Photo%20Video/416/sheet.mp4",
+        ],
     ])
+    listing = {
+        "416": {
+            "images": ["https://colourdiam.com/Product/Jewellery/Model%20images/416/1.jpeg"],
+            "videos": ["https://colourdiam.com/Product/Jewellery/Model%20images/416/video.mp4"],
+        }
+    }
+    with patch("ftp_media.list_model_media", return_value=listing):
+        sources = reader.get_source_rows()
+
+    assert sources["416"]["facebook_caption"] == "Hello 416"
+    assert sources["416"]["main_image"] == "https://media.example/416/center.jpg"
+    assert sources["416"]["model_images"] == listing["416"]["images"]
+    assert sources["416"]["model_videos"] == listing["416"]["videos"]
+    print("OK test_source_import_uses_ftp_model_media_not_sheet_links")
+
+
+def test_ftp_model_media_replaces_sheet_links_by_sku():
+    from ftp_media import merge_ftp_model_media
+
+    listing = {
+        "416": {
+            "images": [
+                "https://colourdiam.com/Product/Jewellery/Model%20images/416/center.jpeg",
+                "https://colourdiam.com/Product/Jewellery/Model%20images/416/2.jpeg",
+            ],
+            "videos": [
+                "https://colourdiam.com/Product/Jewellery/Model%20images/416/video.mp4"
+            ],
+        }
+    }
     sources = {
-        "298": {
-            "model_images": ["https://cdn.example/298/model-1.jpg"],
-            "model_videos": [],
+        "416": {
+            "model_images": ["https://colourdiam.com/Product/Model%20Photo%20Video/416/sheet.jpeg"],
+            "model_videos": ["https://colourdiam.com/Product/Model%20Photo%20Video/416/sheet.mp4"],
         }
     }
 
-    reader._merge_model_media_rows(sources)
+    merge_ftp_model_media(sources, listing)
 
-    assert sources["298"]["model_images"] == [
-        "https://cdn.example/298/model-1.jpg",
-        "https://cdn.example/298/model-2.jpg",
-    ]
-    assert sources["298"]["model_videos"] == ["https://cdn.example/298/model.mp4"]
-    assert "not-in-primary" not in sources
-    print("OK test_supplemental_model_media_merges_by_sku_without_new_products")
-
-
-def test_model_media_ftp_schema_merges_by_stock_id():
-    from sheets_reader import SheetsReader
-
-    reader = SheetsReader.__new__(SheetsReader)
-    reader.model_media_ws = types.SimpleNamespace(get_all_values=lambda: [
-        ["Stock ID", "Model Photo Links", "Model Video Links", "FTP Folder"],
-        [
-            "416",
-            "https://colourdiam.com/Product/Model%20Photo%20Video/416/center.jpeg\n"
-            "https://colourdiam.com/Product/Model%20Photo%20Video/416/2.jpeg",
-            "https://colourdiam.com/Product/Model%20Photo%20Video/416/video.mp4",
-            "416",
-        ],
-    ])
-    sources = {"416": {"model_images": [], "model_videos": []}}
-
-    reader._merge_model_media_rows(sources)
-
-    assert len(sources["416"]["model_images"]) == 2
-    assert sources["416"]["model_videos"] == [
-        "https://colourdiam.com/Product/Model%20Photo%20Video/416/video.mp4"
-    ]
-    print("OK test_model_media_ftp_schema_merges_by_stock_id")
+    assert sources["416"]["model_images"] == listing["416"]["images"]
+    assert sources["416"]["model_videos"] == listing["416"]["videos"]
+    print("OK test_ftp_model_media_replaces_sheet_links_by_sku")
 
 
 def test_source_import_builds_product_name_from_details():
@@ -885,7 +892,8 @@ def test_source_import_builds_product_name_from_details():
             "https://colourdiam.com/productdetail/1263",
         ],
     ])
-    sources = reader.get_source_rows()
+    with patch("ftp_media.list_model_media", return_value={}):
+        sources = reader.get_source_rows()
     assert sources["309"]["product_name"] == "0.16 Ct Fancy Deep Pink Marquise Diamond SI2"
     assert sources["1263"]["product_name"] == "0.30 – Fancy Green VS"
     print("OK test_source_import_builds_product_name_from_details")
@@ -909,7 +917,8 @@ def test_compound_sku_product_links_are_not_false_mismatches():
             "https://colourdiam.com/productdetail/Menu/3443/3444",
         ],
     ])
-    sources = reader.get_source_rows()
+    with patch("ftp_media.list_model_media", return_value={}):
+        sources = reader.get_source_rows()
     assert sources["665_142"]["integrity_error"] == ""
     assert "another SKU" in sources["3443_3444"]["integrity_error"]
     print("OK test_compound_sku_product_links_are_not_false_mismatches")
@@ -970,16 +979,13 @@ def test_glued_model_photo_and_video_links_use_model_photo_video_origin():
             "https://images.colourdiam.com/videos/STK298/model-video.mp4",
         ],
     ])
-    sources = reader.get_source_rows()
-    assert sources["298"]["model_images"] == [
-        "https://colourdiam.com/Product/Model%20Photo%20Video/298/1.jpeg",
-        "https://colourdiam.com/Product/Model%20Photo%20Video/298/2.jpeg",
-        "https://colourdiam.com/Product/Model%20Photo%20Video/298/3.jpeg",
-        "https://colourdiam.com/Product/Model%20Photo%20Video/298/center.jpeg",
-    ]
-    assert sources["298"]["model_videos"] == [
-        "https://colourdiam.com/Product/Model%20Photo%20Video/298/video.mp4",
-    ]
+    with patch("ftp_media.list_model_media", return_value={}):
+        sources = reader.get_source_rows()
+    assert sources["298"]["main_image"] == (
+        "https://colourdiam.com/Product/Jewellery/298/white45/center.jpg"
+    )
+    assert sources["298"]["model_images"] == []
+    assert sources["298"]["model_videos"] == []
     print("OK test_glued_model_photo_and_video_links_use_model_photo_video_origin")
 
 
@@ -1048,6 +1054,12 @@ def test_model_photo_video_404s_fall_back_to_jewellery_model_images():
         "https://colourdiam.com/Product/Model%20Photo%20Video/298/video.mp4"
         in resolved
     )
+    ftp_url = "https://colourdiam.com/Product/Jewellery/Model%20images/298/video.mp4"
+    ftp_resolved = optimized_runner.resolve_media_fixed(
+        {"platform": "facebook", "media_selection": "model_video:0", "sku": "298"},
+        {"sku": "298", "model_videos": [ftp_url]},
+    )
+    assert ftp_resolved[0] == ftp_url
     print("OK test_model_photo_video_404s_fall_back_to_jewellery_model_images")
 
 
@@ -1090,7 +1102,12 @@ def test_ftp_listing_maps_files_to_public_https_urls():
     assert listing["416"]["videos"] == [
         "https://colourdiam.com/Product/Jewellery/Model%20images/416/video.mp4"
     ]
-    sources = {"416": {"model_images": [], "model_videos": []}}
+    sources = {
+        "416": {
+            "model_images": ["https://sheet.example/416/old.jpg"],
+            "model_videos": ["https://sheet.example/416/old.mp4"],
+        }
+    }
     merge_ftp_model_media(sources, listing)
     assert sources["416"]["model_images"] == listing["416"]["images"]
     assert sources["416"]["model_videos"] == listing["416"]["videos"]
@@ -1184,8 +1201,8 @@ if __name__ == "__main__":
     test_stable_job_id_blocks_duplicate_when_media_changed()
     test_account_local_posting_slots_are_timezone_aware_and_idempotent()
     test_source_import_duplicate_headers_do_not_abort_uploads()
-    test_supplemental_model_media_merges_by_sku_without_new_products()
-    test_model_media_ftp_schema_merges_by_stock_id()
+    test_source_import_uses_ftp_model_media_not_sheet_links()
+    test_ftp_model_media_replaces_sheet_links_by_sku()
     test_source_import_builds_product_name_from_details()
     test_compound_sku_product_links_are_not_false_mismatches()
     test_glued_model_photo_and_video_links_use_model_photo_video_origin()

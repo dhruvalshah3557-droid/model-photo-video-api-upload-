@@ -140,34 +140,25 @@ def list_model_media(skus=None, client=None, config=None):
 
 
 def merge_ftp_model_media(sources, listing=None):
-    """Add FTP-backed HTTPS URLs for SKUs already present in Source Import."""
+    """Replace model photo/video URLs with files listed in the FTP folder."""
     if not sources:
         return sources
     listing = listing if listing is not None else list_model_media(sources.keys())
     if not listing:
+        for source in sources.values():
+            source["model_images"] = []
+            source["model_videos"] = []
         return sources
-    added = 0
+    replaced = 0
     for sku, source in sources.items():
         files = listing.get(sku) or listing.get(str(sku).strip())
         if not files:
+            source["model_images"] = []
+            source["model_videos"] = []
             continue
-        images = list(source.get("model_images") or [])
-        videos = list(source.get("model_videos") or [])
-        have = {_basename(url).lower() for url in images + videos}
-        for url in files.get("images") or []:
-            name = _basename(url).lower()
-            if name and name not in have:
-                images.append(url)
-                have.add(name)
-                added += 1
-        for url in files.get("videos") or []:
-            name = _basename(url).lower()
-            if name and name not in have:
-                videos.append(url)
-                have.add(name)
-                added += 1
-        source["model_images"] = images
-        source["model_videos"] = videos
-    if added:
-        logger.info("Merged %s FTP model-media URL(s) onto Source Import rows", added)
+        source["model_images"] = list(files.get("images") or [])
+        source["model_videos"] = list(files.get("videos") or [])
+        replaced += 1
+    if replaced:
+        logger.info("Loaded model media for %s SKU(s) from FTP folder", replaced)
     return sources

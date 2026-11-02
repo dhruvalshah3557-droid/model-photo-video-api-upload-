@@ -68,8 +68,6 @@ jobs:
           GOOGLE_SHEET_CREDENTIALS: credentials/service_account.json
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           SOURCE_IMPORT_SHEET: Source Import
-          MODEL_MEDIA_SHEET_URL: https://docs.google.com/spreadsheets/d/1kAD1ASXaaqrBmNHDVMYgj_cfW8pFJPEiRCY8ENutAvQ/edit
-          MODEL_MEDIA_SOURCE_SHEET: Model Media FTP
           ACCOUNTS_SHEET: Accounts
           QUEUE_SHEET: Publishing Queue
           LOG_SHEET: Publishing Log
@@ -85,8 +83,6 @@ jobs:
           GOOGLE_SHEET_CREDENTIALS: credentials/service_account.json
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           SOURCE_IMPORT_SHEET: Source Import
-          MODEL_MEDIA_SHEET_URL: https://docs.google.com/spreadsheets/d/1kAD1ASXaaqrBmNHDVMYgj_cfW8pFJPEiRCY8ENutAvQ/edit
-          MODEL_MEDIA_SOURCE_SHEET: Model Media FTP
           ACCOUNTS_SHEET: Accounts
           QUEUE_SHEET: Publishing Queue
           LOG_SHEET: Publishing Log
