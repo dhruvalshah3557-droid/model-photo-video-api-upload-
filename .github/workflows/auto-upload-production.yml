@@ -32,7 +32,7 @@ jobs:
           cache-dependency-path: auto_upload/requirements.txt
 
       - name: Cache YouTube OAuth token
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: auto_upload/credentials/youtube_token*.pickle
           key: youtube-token-${{ runner.os }}-v2
