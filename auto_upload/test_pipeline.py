@@ -1092,6 +1092,8 @@ def test_ftp_listing_maps_files_to_public_https_urls():
             "host": "ftp.example",
             "user": "user",
             "password": "pass",
+            "directories": ["Product/Jewellery/Model images"],
+            "public_bases": ["https://colourdiam.com/Product/Jewellery/Model%20images/"],
             "directory": "Product/Jewellery/Model images",
             "public_base": "https://colourdiam.com/Product/Jewellery/Model%20images/",
         },
@@ -1112,6 +1114,70 @@ def test_ftp_listing_maps_files_to_public_https_urls():
     assert sources["416"]["model_images"] == listing["416"]["images"]
     assert sources["416"]["model_videos"] == listing["416"]["videos"]
     print("OK test_ftp_listing_maps_files_to_public_https_urls")
+
+
+def test_ftp_main_folder_list_prefers_model_photo_video():
+    from ftp_media import list_model_media
+
+    class FakeFTP:
+        def __init__(self):
+            self.cwd_path = ""
+
+        def cwd(self, path):
+            self.cwd_path = path
+            if path == "/":
+                return None
+            if path not in (
+                "Product/Model Photo Video",
+                "Product/Jewellery/Model images",
+            ):
+                raise Exception("no such directory")
+            return None
+
+        def nlst(self, path="."):
+            if self.cwd_path == "Product/Model Photo Video":
+                if path in (".", ""):
+                    return ["416"]
+                if path == "416":
+                    return ["416/video.mp4"]
+                return []
+            if self.cwd_path == "Product/Jewellery/Model images":
+                if path in (".", ""):
+                    return ["416", "298"]
+                if path == "416":
+                    return ["416/video.mp4", "416/1.jpeg"]
+                if path == "298":
+                    return ["298/center.jpeg"]
+                return []
+            return []
+
+    listing = list_model_media(
+        skus=["416", "298"],
+        client=FakeFTP(),
+        config={
+            "host": "ftp.example",
+            "user": "user",
+            "password": "pass",
+            "directories": [
+                "Product/Model Photo Video",
+                "Product/Jewellery/Model images",
+            ],
+            "public_bases": [
+                "https://colourdiam.com/Product/Model%20Photo%20Video/",
+                "https://colourdiam.com/Product/Jewellery/Model%20images/",
+            ],
+        },
+    )
+    assert listing["416"]["videos"] == [
+        "https://colourdiam.com/Product/Model%20Photo%20Video/416/video.mp4"
+    ]
+    assert listing["416"]["images"] == [
+        "https://colourdiam.com/Product/Jewellery/Model%20images/416/1.jpeg"
+    ]
+    assert listing["298"]["images"] == [
+        "https://colourdiam.com/Product/Jewellery/Model%20images/298/center.jpeg"
+    ]
+    print("OK test_ftp_main_folder_list_prefers_model_photo_video")
 
 
 def test_youtube_jobs_are_queued_when_only_product_images_mismatch():
@@ -1210,6 +1276,7 @@ if __name__ == "__main__":
     test_dead_cdn_hosts_are_rewritten_onto_live_origin()
     test_model_photo_video_404s_fall_back_to_jewellery_model_images()
     test_ftp_listing_maps_files_to_public_https_urls()
+    test_ftp_main_folder_list_prefers_model_photo_video()
     test_youtube_jobs_are_queued_when_only_product_images_mismatch()
     test_dns_and_integrity_preflight_failures_are_retried()
     test_ffprobe_timeout_is_not_broken_media()
