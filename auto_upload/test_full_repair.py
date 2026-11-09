@@ -1216,6 +1216,19 @@ class FullRepairTests(unittest.TestCase):
         self.assertEqual(updates[0][1]["status"], "pending")
         self.assertIn("model photo video", updates[0][1]["notes"].lower())
 
+    def test_empty_ftp_listing_uses_public_jewellery_urls(self):
+        from ftp_media import http_model_media_urls, merge_ftp_model_media
+
+        urls = http_model_media_urls("298")
+        self.assertEqual(
+            urls["videos"],
+            ["https://colourdiam.com/Product/Jewellery/Model%20images/298/video.mp4"],
+        )
+        sources = {"298": {"model_images": [], "model_videos": []}}
+        merge_ftp_model_media(sources, {})
+        self.assertEqual(sources["298"]["model_videos"], urls["videos"])
+        self.assertEqual(sources["298"]["model_images"][0], urls["images"][0])
+
     def test_model_photo_video_http_fallback_uses_jewellery_model_images(self):
         from sheets_reader import SheetsReader
 

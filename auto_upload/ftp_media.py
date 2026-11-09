@@ -16,6 +16,17 @@ DEFAULT_PUBLIC_BASES = (
 )
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
+HTTP_VIDEO_NAMES = ("video.mp4",)
+HTTP_IMAGE_NAMES = ("1.jpeg", "center.jpeg")
+_FTP_HOME_PREFIXES = (
+    "",
+    "httpdocs",
+    "public_html",
+    "wwwroot",
+    "www",
+    "web",
+    "site",
+)
 _LISTING_CACHE = None
 
 
@@ -130,38 +141,150 @@ def _sku_from_filename(filename, wanted):
     return stem
 
 
+def _remember_home(ftp):
+    if getattr(ftp, "_login_home", None):
+        return
+    pwd = getattr(ftp, "pwd", None)
+    try:
+        ftp._login_home = pwd() if callable(pwd) else None
+    except Exception:
+        ftp._login_home = None
+
+
 def _connect(cfg, factory=None):
     factory = factory or ftplib.FTP
     client = factory()
     client.connect(cfg["host"], timeout=20)
     client.login(cfg["user"], cfg["password"])
     client.set_pasv(True)
+    _remember_home(client)
     return client
 
 
-def _nlst(client, path):
+def _nlst(client, path, fallback_cwd=True):
     try:
         return list(client.nlst(path) or [])
     except Exception:
+        if not fallback_cwd:
+            return []
         try:
             return list(client.nlst() or [])
         except Exception:
             return []
 
 
-def _list_one_directory(ftp, root, public_base, wanted):
+def _cwd_candidates(root):
+    """Return likely FTP paths for IIS/Apache login homes.
+
+    Production was calling cwd('/') then the relative Product/... path. On
+    IIS that 550s both directories, the listing comes back empty, and every
+    model photo/video job fails preflight.
+    """
+    root = str(root or "").strip().replace("\\", "/").strip("/")
+    if not root:
+        return ["."]
+    names = [root]
+    lowered = root.lower()
+    if lowered.startswith("product/"):
+        names.append(root.split("/", 1)[1])
+    candidates = []
+    seen = set()
+
+    def add(path):
+        text = str(path or "").strip()
+        if not text:
+            return
+        key = text.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(text)
+
+    for name in names:
+        add(name)
+        add("/" + name)
+        for prefix in _FTP_HOME_PREFIXES:
+            if not prefix:
+                continue
+            add(prefix + "/" + name)
+            add("/" + prefix + "/" + name)
+    return candidates
+
+
+def _reset_home(ftp):
     cwd = getattr(ftp, "cwd", None)
-    if root and cwd:
+    if not cwd:
+        return
+    _remember_home(ftp)
+    home = getattr(ftp, "_login_home", None)
+    if home:
         try:
-            cwd("/")
+            cwd(home)
+            return
         except Exception:
             pass
+    try:
+        cwd("/")
+    except Exception:
+        pass
+
+
+def _enter_directory(ftp, root):
+    cwd = getattr(ftp, "cwd", None)
+    if not cwd:
+        return root or "."
+    _reset_home(ftp)
+    last_exc = None
+    for candidate in _cwd_candidates(root):
         try:
-            cwd(root)
+            cwd(candidate)
+            if candidate != root:
+                logger.info("FTP model-media directory %s found at %s", root, candidate)
+            return candidate
         except Exception as exc:
-            logger.warning("FTP model-media directory unavailable (%s): %s", root, exc)
-            return {}
-    entries = [_basename(name) for name in _nlst(ftp, ".")]
+            last_exc = exc
+    logger.warning("FTP model-media directory unavailable (%s): %s", root, last_exc)
+    return None
+
+
+def http_model_media_urls(sku):
+    """Public Colour Diam URLs used when FTP listing is empty.
+
+    Jewellery/Model images is the live HTTP folder. Model Photo Video 404s
+    for these filenames, so it is not used as a fallback source.
+    """
+    key = normalize_sku(sku)
+    if not key:
+        return {"images": [], "videos": []}
+    sku_path = quote(key, safe="_-")
+    root = str(DEFAULT_PUBLIC_BASES[-1]).rstrip("/") + "/"
+    return {
+        "images": [root + sku_path + "/" + name for name in HTTP_IMAGE_NAMES],
+        "videos": [root + sku_path + "/" + name for name in HTTP_VIDEO_NAMES],
+    }
+
+
+def _list_one_directory(ftp, root, public_base, wanted):
+    _reset_home(ftp)
+    entered = None
+    list_root = str(root or "").strip().rstrip("/")
+    entries = []
+    for candidate in _cwd_candidates(root):
+        found = [_basename(name) for name in _nlst(ftp, candidate, fallback_cwd=False)]
+        if found:
+            list_root = candidate
+            entries = found
+            break
+    if not entries:
+        entered = _enter_directory(ftp, root)
+        if entered:
+            list_root = entered
+            entries = [
+                _basename(name)
+                for name in _nlst(ftp, ".", fallback_cwd=True)
+            ]
+    if not entries:
+        return {}
     wanted_keys = _wanted_keys(wanted)
     listing = {}
     for name in entries:
@@ -181,7 +304,8 @@ def _list_one_directory(ftp, root, public_base, wanted):
         if wanted_keys and sku not in wanted_keys and name not in wanted:
             continue
         bucket = listing.setdefault(sku, {"images": [], "videos": []})
-        for raw in _nlst(ftp, name):
+        child_path = name if entered else str(list_root).rstrip("/") + "/" + name
+        for raw in _nlst(ftp, child_path, fallback_cwd=False):
             filename = _basename(raw)
             if not filename or filename in (".", ".."):
                 continue
@@ -241,6 +365,7 @@ def list_model_media(skus=None, client=None, config=None):
     ftp = None
     try:
         ftp = client or _connect(cfg)
+        _remember_home(ftp)
         for root, public_base in zip(directories, bases):
             listing = _merge_listings(
                 listing,
@@ -270,30 +395,46 @@ def list_model_media(skus=None, client=None, config=None):
 
 
 def merge_ftp_model_media(sources, listing=None):
-    """Replace model photo/video URLs with files listed in the FTP folder."""
+    """Replace model photo/video URLs with files listed in the FTP folder.
+
+    An empty FTP listing must not wipe Source rows. Production was 550ing
+    both model folders, then clearing every SKU and selecting zero jobs.
+    Fall back to the public Colour Diam HTTPS paths that still serve files.
+    """
     if not sources:
         return sources
     listing = listing if listing is not None else list_model_media(sources.keys())
-    if not listing:
-        for source in sources.values():
-            source["model_images"] = []
-            source["model_videos"] = []
-        return sources
     replaced = 0
+    filled = 0
+    ftp_available = bool(listing)
     for sku, source in sources.items():
         key = normalize_sku(sku)
-        files = (
-            listing.get(sku)
-            or listing.get(str(sku).strip())
-            or listing.get(key)
-        )
-        if not files:
+        files = None
+        if ftp_available:
+            files = (
+                listing.get(sku)
+                or listing.get(str(sku).strip())
+                or listing.get(key)
+            )
+        if files and (files.get("images") or files.get("videos")):
+            source["model_images"] = list(files.get("images") or [])
+            source["model_videos"] = list(files.get("videos") or [])
+            replaced += 1
+            continue
+        if ftp_available:
             source["model_images"] = []
             source["model_videos"] = []
             continue
-        source["model_images"] = list(files.get("images") or [])
-        source["model_videos"] = list(files.get("videos") or [])
-        replaced += 1
+        fallback = http_model_media_urls(key)
+        source["model_images"] = list(fallback.get("images") or [])
+        source["model_videos"] = list(fallback.get("videos") or [])
+        if source["model_images"] or source["model_videos"]:
+            filled += 1
     if replaced:
         logger.info("Loaded model media for %s SKU(s) from FTP folder", replaced)
+    if filled:
+        logger.info(
+            "Filled model media for %s SKU(s) from public Colour Diam folders after empty FTP listing",
+            filled,
+        )
     return sources

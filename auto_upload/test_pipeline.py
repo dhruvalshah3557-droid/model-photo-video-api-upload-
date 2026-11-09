@@ -984,8 +984,13 @@ def test_glued_model_photo_and_video_links_use_model_photo_video_origin():
     assert sources["298"]["main_image"] == (
         "https://colourdiam.com/Product/Jewellery/298/white45/center.jpg"
     )
-    assert sources["298"]["model_images"] == []
-    assert sources["298"]["model_videos"] == []
+    assert sources["298"]["model_images"] == [
+        "https://colourdiam.com/Product/Jewellery/Model%20images/298/1.jpeg",
+        "https://colourdiam.com/Product/Jewellery/Model%20images/298/center.jpeg",
+    ]
+    assert sources["298"]["model_videos"] == [
+        "https://colourdiam.com/Product/Jewellery/Model%20images/298/video.mp4",
+    ]
     print("OK test_glued_model_photo_and_video_links_use_model_photo_video_origin")
 
 
@@ -1180,6 +1185,88 @@ def test_ftp_main_folder_list_prefers_model_photo_video():
     print("OK test_ftp_main_folder_list_prefers_model_photo_video")
 
 
+def test_ftp_finds_model_dirs_when_root_cwd_is_rejected():
+    from ftp_media import list_model_media, merge_ftp_model_media
+
+    class FakeFTP:
+        def __init__(self):
+            self.cwd_path = "login-home"
+
+        def cwd(self, path):
+            if path == "/":
+                raise Exception("550 The system cannot find the path specified.")
+            if path in (
+                "Product/Model Photo Video",
+                "Product/Jewellery/Model images",
+            ):
+                self.cwd_path = path
+                return None
+            raise Exception("550 The system cannot find the path specified.")
+
+        def nlst(self, path="."):
+            if path in (
+                "Product/Jewellery/Model images",
+                "/Product/Jewellery/Model images",
+            ):
+                return ["298"]
+            if self.cwd_path == "Product/Jewellery/Model images":
+                if path in (".", ""):
+                    return ["298"]
+                if path == "298":
+                    return ["298/video.mp4", "298/1.jpeg"]
+            if str(path).rstrip("/").endswith("/298") or path == "298":
+                return ["298/video.mp4", "298/1.jpeg"]
+            return []
+
+    listing = list_model_media(
+        skus=["298"],
+        client=FakeFTP(),
+        config={
+            "host": "ftp.example",
+            "user": "user",
+            "password": "pass",
+            "directories": [
+                "Product/Model Photo Video",
+                "Product/Jewellery/Model images",
+            ],
+            "public_bases": [
+                "https://colourdiam.com/Product/Model%20Photo%20Video/",
+                "https://colourdiam.com/Product/Jewellery/Model%20images/",
+            ],
+        },
+    )
+    assert listing["298"]["videos"] == [
+        "https://colourdiam.com/Product/Jewellery/Model%20images/298/video.mp4"
+    ]
+    assert listing["298"]["images"] == [
+        "https://colourdiam.com/Product/Jewellery/Model%20images/298/1.jpeg"
+    ]
+    print("OK test_ftp_finds_model_dirs_when_root_cwd_is_rejected")
+
+
+def test_empty_ftp_listing_fills_public_jewellery_urls():
+    from ftp_media import merge_ftp_model_media
+
+    sources = {
+        "298": {"model_images": [], "model_videos": []},
+        "416": {
+            "model_images": ["https://sheet.example/old.jpg"],
+            "model_videos": ["https://sheet.example/old.mp4"],
+        },
+    }
+    merge_ftp_model_media(sources, {})
+    assert sources["298"]["model_videos"] == [
+        "https://colourdiam.com/Product/Jewellery/Model%20images/298/video.mp4"
+    ]
+    assert sources["298"]["model_images"][0] == (
+        "https://colourdiam.com/Product/Jewellery/Model%20images/298/1.jpeg"
+    )
+    assert sources["416"]["model_videos"] == [
+        "https://colourdiam.com/Product/Jewellery/Model%20images/416/video.mp4"
+    ]
+    print("OK test_empty_ftp_listing_fills_public_jewellery_urls")
+
+
 def test_ftp_lists_mp4_and_mov_videos_matched_to_sheet_stock_id():
     from ftp_media import list_model_media, merge_ftp_model_media
     from job_generator import generate_jobs
@@ -1352,6 +1439,8 @@ if __name__ == "__main__":
     test_model_photo_video_404s_fall_back_to_jewellery_model_images()
     test_ftp_listing_maps_files_to_public_https_urls()
     test_ftp_main_folder_list_prefers_model_photo_video()
+    test_ftp_finds_model_dirs_when_root_cwd_is_rejected()
+    test_empty_ftp_listing_fills_public_jewellery_urls()
     test_ftp_lists_mp4_and_mov_videos_matched_to_sheet_stock_id()
     test_youtube_jobs_are_queued_when_only_product_images_mismatch()
     test_dns_and_integrity_preflight_failures_are_retried()
