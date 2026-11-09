@@ -14,7 +14,7 @@ DEFAULT_PUBLIC_BASES = (
     "https://colourdiam.com/Product/Model%20Photo%20Video/",
     "https://colourdiam.com/Product/Jewellery/Model%20images/",
 )
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
 HTTP_VIDEO_NAMES = ("video.mp4",)
 HTTP_IMAGE_NAMES = ("1.jpeg", "center.jpeg")

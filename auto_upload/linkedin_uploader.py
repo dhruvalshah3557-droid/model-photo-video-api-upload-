@@ -4,7 +4,7 @@ import os
 
 import requests
 
-from media_prep import prepare_video
+from media_prep import prepare_image, prepare_video
 
 logger = logging.getLogger(__name__)
 
@@ -108,14 +108,7 @@ class LinkedInUploader:
             raise Exception(f"LinkedIn media upload error {resp.status_code}: {resp.text[:500]}")
 
     def _add_image_asset(self, media_url, author_urn):
-        resp = requests.get(
-            media_url,
-            timeout=180,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-        )
-        resp.raise_for_status()
-        content = resp.content
-        content_type = resp.headers.get("Content-Type", "application/octet-stream")
+        _name, content, content_type = prepare_image(media_url)
         upload_url, asset = self._register_image_asset(author_urn)
         self._upload_bytes(upload_url, content, content_type)
         logger.info(f"[{self.account_name}] LinkedIn image asset ready: {asset}")

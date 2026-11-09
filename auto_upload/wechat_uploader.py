@@ -5,7 +5,7 @@ import time
 
 import requests
 
-from media_prep import prepare_video
+from media_prep import prepare_image, prepare_video
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ class WeChatUploader:
     # ------------------------------------------------------------------
     def add_image_material(self, media_url):
         """Upload a permanent image material; returns (media_id, image_url)."""
-        name, content, content_type = self._download_media(media_url)
+        name, content, content_type = prepare_image(media_url)
         resp = requests.post(
             f"{WECHAT_BASE}/cgi-bin/material/add_material",
             params={"access_token": self._get_token(), "type": "image"},

@@ -332,6 +332,51 @@ class MusicRotationTests(unittest.TestCase):
         self.assertIn("-noautorotate", command)
         self.assertIn("transpose=1,split=2", command)
 
+    def test_media_kind_treats_mov_as_video_and_heic_as_image(self):
+        self.assertEqual(media_prep.media_kind("https://cdn/model.MOV"), "video")
+        self.assertEqual(media_prep.media_kind("https://cdn/model.heic"), "image")
+        self.assertEqual(media_prep.media_kind("https://cdn/model.HEIF?x=1"), "image")
+
+    def test_is_heic_media_detects_extension_type_and_ftyp(self):
+        header = b"\x00\x00\x00\x18ftypheic" + b"\x00" * 8
+        self.assertTrue(media_prep.is_heic_media(name="photo.HEIC"))
+        self.assertTrue(media_prep.is_heic_media(content_type="image/heif"))
+        self.assertTrue(media_prep.is_heic_media(content=header))
+        self.assertFalse(media_prep.is_heic_media(name="photo.jpg", content=b"\xff\xd8\xff"))
+
+    def test_prepare_image_converts_heic_to_jpeg(self):
+        heic = b"\x00\x00\x00\x18ftypmif1" + b"\x00" * 20
+        jpeg = b"\xff\xd8\xff\xe0" + b"converted"
+        with mock.patch(
+            "media_prep._download_bytes",
+            return_value=("model.HEIC", heic, "image/heic"),
+        ), mock.patch("media_prep._heic_to_jpeg", return_value=jpeg) as convert:
+            name, content, content_type = media_prep.prepare_image(
+                "https://colourdiam.com/Product/Model%20Photo%20Video/298/model.HEIC"
+            )
+        convert.assert_called_once_with(heic)
+        self.assertEqual(name, "model.jpg")
+        self.assertEqual(content, jpeg)
+        self.assertEqual(content_type, "image/jpeg")
+
+    def test_prepare_image_keeps_jpeg_bytes(self):
+        jpeg = b"\xff\xd8\xff\xe0jpeg-bytes"
+        with mock.patch(
+            "media_prep._download_bytes",
+            return_value=("1.jpeg", jpeg, "image/jpeg"),
+        ), mock.patch("media_prep._heic_to_jpeg") as convert:
+            name, content, content_type = media_prep.prepare_image(
+                "https://colourdiam.com/Product/Jewellery/Model%20images/298/1.jpeg"
+            )
+        convert.assert_not_called()
+        self.assertEqual(name, "1.jpeg")
+        self.assertEqual(content, jpeg)
+        self.assertEqual(content_type, "image/jpeg")
+
+    def test_heic_magic_is_accepted_as_image(self):
+        header = b"\x00\x00\x00\x18ftypheic" + b"\x00" * 4
+        self.assertTrue(media_prep._matches_magic(header, "image"))
+
 
 if __name__ == "__main__":
     unittest.main()

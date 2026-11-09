@@ -6,6 +6,8 @@ import time
 
 import requests
 
+from media_prep import prepare_image
+
 logger = logging.getLogger(__name__)
 
 # Region -> API base. Thailand uses the global partner host; other regions are
@@ -92,12 +94,8 @@ class ShopeeUploader:
             raise Exception(
                 f"Shopee media upload supports images only; got: {media_url[:120]}"
             )
-        resp = requests.get(media_url, timeout=180, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        })
-        resp.raise_for_status()
-        name = media_url.split("?")[0].rsplit("/", 1)[-1] or "image.jpg"
-        files = {"images[]": (name, resp.content, "image/jpeg")}
+        name, content, content_type = prepare_image(media_url)
+        files = {"images[]": (name, content, content_type or "image/jpeg")}
         result = self._request(
             "/api/v2/product/upload_img", method="POST", files=files
         )

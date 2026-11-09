@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 import requests
-from media_prep import _download_bytes, audio_state, prepare_video, video_layout_from_bytes
+from media_prep import audio_state, is_heic_media, prepare_image, prepare_video, video_layout_from_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -342,7 +342,7 @@ class InstagramUploader:
     @staticmethod
     def _download_image_bytes(media_url):
         """Download original image bytes Meta's crawler could not fetch."""
-        name, content, content_type = _download_bytes(media_url)
+        name, content, content_type = prepare_image(media_url)
         content_type = (content_type or "").lower().split(";", 1)[0]
         content = content or b""
         if content_type.startswith("text/") or "html" in content_type:
@@ -550,6 +550,10 @@ class InstagramUploader:
                     params["cover_url"] = cover
                 else:
                     params["thumb_offset"] = 1000
+        elif is_heic_media(media_url):
+            return self._create_resumable_image(
+                media_url, caption, product_id, carousel_item
+            )
         else:
             params["image_url"] = media_url
 

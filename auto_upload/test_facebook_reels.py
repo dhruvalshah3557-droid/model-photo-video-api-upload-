@@ -185,6 +185,28 @@ class FacebookPageTokenTests(unittest.TestCase):
             resolved = FacebookUploader._resolve_page_token("106169348108583", "user-token")
         self.assertEqual(resolved, "bkk-page-token")
 
+    def test_photo_upload_converts_heic_via_prepare_image(self):
+        uploader = FacebookUploader.__new__(FacebookUploader)
+        uploader.page_id = "page-123"
+        uploader.access_token = "page-token"
+        uploader.page_name = "Colour Diam Test"
+        with mock.patch(
+            "facebook_uploader.prepare_image",
+            return_value=("model.jpg", b"\xff\xd8\xffjpeg", "image/jpeg"),
+        ) as prepare, mock.patch(
+            "facebook_uploader.requests.post",
+            return_value=_Response({"id": "photo-1"}),
+        ) as post:
+            result = uploader.upload_photo(
+                "https://colourdiam.com/Product/Model%20Photo%20Video/298/model.heic",
+                "Caption",
+            )
+        prepare.assert_called_once()
+        self.assertEqual(result["id"], "photo-1")
+        files = post.call_args.kwargs["files"]
+        self.assertEqual(files["source"][0], "model.jpg")
+        self.assertEqual(files["source"][2], "image/jpeg")
+
 
 if __name__ == "__main__":
     unittest.main()

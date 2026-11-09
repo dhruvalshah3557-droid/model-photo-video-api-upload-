@@ -10,7 +10,7 @@ LINE_BOT_API = "https://api.line.me/v2/bot/message/broadcast"
 LINE_TEXT_LIMIT = 5000
 
 _VIDEO_EXTS = (".mp4", ".mov", ".avi", ".mkv", ".webm")
-_IMAGE_EXTS = (".jpg", ".jpeg", ".png")
+_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp")
 
 
 def _is_video_url(url):

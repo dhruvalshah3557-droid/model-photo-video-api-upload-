@@ -3,7 +3,7 @@ import os
 
 import requests
 
-from media_prep import prepare_video
+from media_prep import prepare_image, prepare_video
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ class XUploader:
         return name, resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 
     def _upload_image(self, media_url):
-        name, content, content_type = self._download_media(media_url)
+        name, content, content_type = prepare_image(media_url)
         resp = requests.post(
             X_MEDIA_UPLOAD_URL,
             auth=self._auth(),

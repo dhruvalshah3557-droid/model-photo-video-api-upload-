@@ -3,7 +3,7 @@ import logging
 
 import requests
 
-from media_prep import _download_bytes, prepare_video, video_layout_from_bytes
+from media_prep import prepare_image, prepare_video, video_layout_from_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +20,8 @@ class FacebookUploader:
 
     @staticmethod
     def _download_media(media_url):
-        """Download original media bytes for image uploads."""
-        return _download_bytes(media_url)
+        """Download image bytes, converting HEIC to JPEG for Meta."""
+        return prepare_image(media_url)
 
     @classmethod
     def _resolve_page_token(cls, page_id, token):

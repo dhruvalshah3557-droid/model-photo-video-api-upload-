@@ -51,7 +51,21 @@ _VIDEO_MAGIC = (
     (b"RIFF", "AVI"),
 )
 
-_IMAGE_TYPES = ("image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp")
+_HEIC_EXTS = (".heic", ".heif")
+_HEIC_TYPES = (
+    "image/heic",
+    "image/heif",
+    "image/heic-sequence",
+    "image/heif-sequence",
+)
+_HEIC_FTYP_BRANDS = (b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"mif1", b"msf1")
+_IMAGE_TYPES = (
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "image/bmp",
+) + _HEIC_TYPES
 _VIDEO_TYPES = (
     "video/mp4",
     "video/quicktime",
@@ -202,6 +216,84 @@ def _download_bytes(media_url):
     name = media_url.split("?")[0].rsplit("/", 1)[-1] or "media"
     content_type = resp.headers.get("Content-Type", "application/octet-stream")
     return name, resp.content, content_type
+
+
+def _is_heic_header(header):
+    data = header or b""
+    if len(data) < 12 or data[4:8] != b"ftyp":
+        return False
+    return data[8:12] in _HEIC_FTYP_BRANDS
+
+
+def is_heic_media(name="", content=b"", content_type=""):
+    ext = Path(str(name or "").split("?")[0]).suffix.lower()
+    if ext in _HEIC_EXTS:
+        return True
+    ctype = (content_type or "").lower().split(";", 1)[0].strip()
+    if ctype in _HEIC_TYPES:
+        return True
+    return _is_heic_header(content or b"")
+
+
+def _heic_to_jpeg(content):
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        fd, src = tempfile.mkstemp(suffix=".heic")
+        os.close(fd)
+        dest = src + ".jpg"
+        try:
+            Path(src).write_bytes(content)
+            proc = subprocess.run(
+                [ffmpeg, "-y", "-i", src, "-frames:v", "1", "-q:v", "2", dest],
+                check=False,
+                capture_output=True,
+                timeout=60,
+            )
+            if proc.returncode == 0 and Path(dest).is_file():
+                data = Path(dest).read_bytes()
+                if data.startswith(b"\xff\xd8\xff"):
+                    return data
+        except Exception as exc:
+            logger.warning("ffmpeg HEIC conversion failed: %s", exc)
+        finally:
+            for path in (src, dest):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+    try:
+        from io import BytesIO
+        from PIL import Image
+
+        try:
+            from pillow_heif import register_heif_opener
+
+            register_heif_opener()
+        except Exception:
+            pass
+        image = Image.open(BytesIO(content))
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        buf = BytesIO()
+        image.save(buf, format="JPEG", quality=95)
+        data = buf.getvalue()
+        if data.startswith(b"\xff\xd8\xff"):
+            return data
+    except Exception as exc:
+        logger.warning("Pillow HEIC conversion failed: %s", exc)
+    return None
+
+
+def prepare_image(media_url):
+    name, content, content_type = _download_bytes(media_url)
+    if not is_heic_media(name, content, content_type):
+        return name, content, content_type
+    converted = _heic_to_jpeg(content)
+    if converted is None:
+        raise RuntimeError(f"Could not convert HEIC image to JPEG: {name}")
+    out_name = f"{Path(name).stem or 'image'}.jpg"
+    logger.info("Converted HEIC %s to JPEG for upload", name)
+    return out_name, converted, "image/jpeg"
 
 
 def _probe_duration(video_path):
@@ -656,6 +748,8 @@ def _matches_magic(header, kind):
         if len(header) >= 8 and header[4:8] == b"ftyp":
             return True
         return any(header.startswith(m) for m, _ in _VIDEO_MAGIC)
+    if _is_heic_header(header):
+        return True
     return any(header.startswith(m) for m, _ in _IMAGE_MAGIC)
 
 

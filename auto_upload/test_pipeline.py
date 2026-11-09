@@ -1342,6 +1342,78 @@ def test_ftp_lists_mp4_and_mov_videos_matched_to_sheet_stock_id():
     print("OK test_ftp_lists_mp4_and_mov_videos_matched_to_sheet_stock_id")
 
 
+def test_ftp_lists_heic_photos_and_mov_videos():
+    from ftp_media import IMAGE_EXTS, VIDEO_EXTS, list_model_media, merge_ftp_model_media
+    from job_generator import generate_jobs
+    from media_prep import media_kind, prepare_image
+
+    assert ".heic" in IMAGE_EXTS and ".heif" in IMAGE_EXTS
+    assert ".mov" in VIDEO_EXTS
+
+    class FakeFTP:
+        def cwd(self, path):
+            return None
+
+        def nlst(self, path="."):
+            if path in (".", ""):
+                return ["298", "notes.txt"]
+            if path == "298":
+                return [
+                    "298/model.HEIC",
+                    "298/side.heif",
+                    "298/clip.MOV",
+                    "298/video.mp4",
+                    "298/ignore.txt",
+                ]
+            return []
+
+    listing = list_model_media(
+        skus=["298"],
+        client=FakeFTP(),
+        config={
+            "host": "ftp.example",
+            "user": "user",
+            "password": "pass",
+            "directories": ["Product/Model Photo Video"],
+            "public_bases": ["https://colourdiam.com/Product/Model%20Photo%20Video/"],
+        },
+    )
+    assert listing["298"]["images"] == [
+        "https://colourdiam.com/Product/Model%20Photo%20Video/298/model.HEIC",
+        "https://colourdiam.com/Product/Model%20Photo%20Video/298/side.heif",
+    ]
+    assert listing["298"]["videos"] == [
+        "https://colourdiam.com/Product/Model%20Photo%20Video/298/clip.MOV",
+        "https://colourdiam.com/Product/Model%20Photo%20Video/298/video.mp4",
+    ]
+    assert media_kind(listing["298"]["images"][0]) == "image"
+    assert media_kind(listing["298"]["videos"][0]) == "video"
+
+    sources = {
+        "298": {
+            "sku": "298",
+            "lab": "",
+            "source_status": "",
+            "integrity_error": "",
+            "model_images": [],
+            "model_videos": [],
+        }
+    }
+    merge_ftp_model_media(sources, listing)
+    jobs = generate_jobs(sources, [_account("FB-CD", "facebook")])
+    selections = sorted(job["media_selection"] for job in jobs if job["sku"] == "298")
+    assert selections == ["model_photo:0", "model_video:0", "model_video:1"]
+
+    jpeg = b"\xff\xd8\xff\xe0jpeg"
+    with patch("media_prep._download_bytes", return_value=("model.HEIC", b"heic-bytes", "image/heic")), \
+         patch("media_prep._heic_to_jpeg", return_value=jpeg):
+        name, content, content_type = prepare_image(listing["298"]["images"][0])
+    assert name == "model.jpg"
+    assert content == jpeg
+    assert content_type == "image/jpeg"
+    print("OK test_ftp_lists_heic_photos_and_mov_videos")
+
+
 def test_youtube_jobs_are_queued_when_only_product_images_mismatch():
     from job_generator import generate_jobs, _is_clean_source
 
@@ -1442,6 +1514,7 @@ if __name__ == "__main__":
     test_ftp_finds_model_dirs_when_root_cwd_is_rejected()
     test_empty_ftp_listing_fills_public_jewellery_urls()
     test_ftp_lists_mp4_and_mov_videos_matched_to_sheet_stock_id()
+    test_ftp_lists_heic_photos_and_mov_videos()
     test_youtube_jobs_are_queued_when_only_product_images_mismatch()
     test_dns_and_integrity_preflight_failures_are_retried()
     test_ffprobe_timeout_is_not_broken_media()

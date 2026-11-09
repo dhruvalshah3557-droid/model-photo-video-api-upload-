@@ -361,6 +361,23 @@ class InstagramMusicRotationTests(unittest.TestCase):
         self.assertEqual(container, "byte-container")
         byte_upload.assert_called_once()
 
+    def test_heic_image_uploads_converted_jpeg_bytes(self):
+        uploader = InstagramUploader.__new__(InstagramUploader)
+        uploader.ig_user_id = "123"
+        uploader.access_token = "token"
+        uploader.page_name = "Colour Diam Israel"
+        uploader._ensure_not_rate_limited = lambda: None
+        with mock.patch.object(
+            uploader, "_create_resumable_image", return_value="heic-container"
+        ) as byte_upload, mock.patch("instagram_uploader.requests.post") as post:
+            container = uploader._create_media_container(
+                "https://colourdiam.com/Product/Model%20Photo%20Video/298/model.HEIC",
+                "caption",
+            )
+        self.assertEqual(container, "heic-container")
+        byte_upload.assert_called_once()
+        post.assert_not_called()
+
     def test_landscape_resumable_video_uses_reel_and_shares_to_feed(self):
         uploader = InstagramUploader.__new__(InstagramUploader)
         uploader.ig_user_id = "123"
