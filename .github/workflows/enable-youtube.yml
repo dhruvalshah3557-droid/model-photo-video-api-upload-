@@ -14,7 +14,8 @@ concurrency:
 
 jobs:
   enable:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: auto_upload
@@ -42,3 +43,7 @@ jobs:
           GOOGLE_SHEET_NAME: ${{ secrets.GOOGLE_SHEET_NAME }}
           ACCOUNTS_SHEET: ${{ secrets.ACCOUNTS_SHEET || 'Accounts' }}
         run: python enable_youtube_accounts.py
+
+      - name: Remove runtime credential files
+        if: always()
+        run: rm -f credentials/service_account.json

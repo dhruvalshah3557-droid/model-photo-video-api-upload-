@@ -17,7 +17,7 @@ concurrency:
 jobs:
   collect:
     timeout-minutes: 15
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: auto_upload
@@ -43,3 +43,7 @@ jobs:
           FB_ACCESS_TOKEN: ${{ secrets.META_ANALYTICS_TOKEN || secrets.FACEBOOKTOKEN }}
           FACEBOOKTOKEN: ${{ secrets.META_ANALYTICS_TOKEN || secrets.FACEBOOKTOKEN }}
         run: python meta_analytics.py
+
+      - name: Remove runtime credential files
+        if: always()
+        run: rm -f credentials/service_account.json

@@ -16,7 +16,8 @@ concurrency:
 
 jobs:
   run:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: auto_upload
@@ -31,18 +32,30 @@ jobs:
           cache: "pip"
           cache-dependency-path: auto_upload/requirements.txt
 
-      - name: Cache YouTube OAuth token
-        uses: actions/cache@v5
-        with:
-          path: auto_upload/credentials/youtube_token*.pickle
-          key: youtube-token-${{ runner.os }}-v2
-
-      - name: Install ffmpeg only if missing
+      - name: Ensure ffmpeg is available
+        timeout-minutes: 5
         run: |
-          if ! command -v ffmpeg >/dev/null 2>&1; then
-            sudo apt-get update -y
-            sudo apt-get install -y --no-install-recommends ffmpeg
+          set -euo pipefail
+          if command -v ffmpeg >/dev/null 2>&1; then
+            ffmpeg -version | head -n 1
+            exit 0
           fi
+          export DEBIAN_FRONTEND=noninteractive
+          for attempt in 1 2 3; do
+            if sudo apt-get update -y \
+                 -o Acquire::Retries=3 \
+                 -o Acquire::http::Timeout=20 \
+                 -o Acquire::https::Timeout=20 \
+              && sudo apt-get install -y --no-install-recommends ffmpeg; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "ERROR: ffmpeg install failed after 3 attempts"
+              exit 1
+            fi
+            sleep 5
+          done
+          command -v ffmpeg >/dev/null
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -154,6 +167,13 @@ jobs:
               fi
             fi
           fi
+
+      - name: Remove runtime credential files
+        if: always()
+        run: |
+          rm -f credentials/service_account.json
+          rm -f credentials/youtube_client_secret.json
+          rm -f credentials/youtube_token*.pickle
 
       - name: Write production health summary
         if: always()

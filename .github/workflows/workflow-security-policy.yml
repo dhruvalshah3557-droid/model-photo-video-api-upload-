@@ -1,0 +1,28 @@
+name: Workflow Security Policy
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+      - "auto_upload/test_workflow_security.py"
+  push:
+    branches: [main, master]
+    paths:
+      - ".github/workflows/**"
+      - "auto_upload/test_workflow_security.py"
+
+permissions:
+  contents: read
+
+jobs:
+  credential-path-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Reject credentials in caches and artifacts
+        run: python3 auto_upload/test_workflow_security.py
