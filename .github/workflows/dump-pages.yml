@@ -29,7 +29,7 @@ jobs:
         run: python dump_pages.py > pages.json || true
 
       - name: Upload pages list
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: pages
           path: auto_upload/pages.json
